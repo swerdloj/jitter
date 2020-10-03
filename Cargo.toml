@@ -1,5 +1,5 @@
 [package]
-name = "ParserTest"
+name = "parse-test"
 version = "0.1.0"
 authors = ["swerdloj <swerdloj@andrews.edu>"]
 edition = "2018"

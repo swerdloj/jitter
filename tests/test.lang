@@ -1,0 +1,11 @@
+fn fn_name(param1: type1, param2: type2) -> return_type {
+    let mut variable: var_type = 1;
+    let mut variable = 7;
+    let variable: var_type = 12;
+    let variable = 7;
+
+    let mut variable: var_type;
+    let mut variable;
+    let variable: var_type;
+    let variable;
+}
