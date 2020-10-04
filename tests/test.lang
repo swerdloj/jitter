@@ -1,11 +1,43 @@
-fn fn_name(param1: type1, param2: type2) -> return_type {
+// struct with fields
+struct Test {
+    field1: type1,
+    field2: type2,
+}
+
+// empty struct
+struct Test2 {}
+
+// fn with fields and no return type
+fn test1(test1: type1, test2: type2) {}
+
+// fn without fields or return type
+fn test2() {}
+
+// fn with return type and no fields
+fn test3() -> type1 {}
+
+// fn with fields and return type
+fn fn_name(mut param1: type1, param2: type2) -> return_type {
+    // let with assign
     let mut variable: var_type = 1;
     let mut variable = 7;
     let variable: var_type = 12;
     let variable = 7;
 
+    // let without assign
     let mut variable: var_type;
     let mut variable;
     let variable: var_type;
     let variable;
+
+    // op-assignments
+    variable += 1;
+    variable -= 2;
+    variable *= 3;
+    variable /= 4;
+    variable =  5;
+
+    // expression assignments
+    variable1 += variable2;
+    variable1 = variable2;
 }

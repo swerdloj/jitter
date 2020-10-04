@@ -1,9 +1,10 @@
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
     Let,
+    Mut,
     Fn,
     For,
-    Mut,
+    Struct,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
@@ -163,8 +164,17 @@ impl<'input> Lexer<'input> {
                     self.advance();
                     Minus
                 }
+                // slash or single-line comment
                 '/' => {
                     self.advance();
+                    if self.current() == '/' {
+                        while self.current() != '\n' {
+                            self.advance();
+                        }
+                        // don't advance here to re-use whitespace logic
+                        continue;
+                    }
+
                     Slash
                 }
                 '*' => {
@@ -224,7 +234,7 @@ impl<'input> Lexer<'input> {
                 it if it.is_ascii_alphabetic() || it == '_' => {
                     let from = self.position;
 
-                    // TODO: This could be simplified quite a bit
+                    // TODO: This could be simplified quite a bit. Consider a macro?
                     // NOTE: Could just treat everything as idents, then check those for keywords,
                     //       but this is much faster
                     match it {
@@ -276,6 +286,30 @@ impl<'input> Lexer<'input> {
                                         self.advance();
                                         tokens.push(Token::Keyword(self::Keyword::Mut).spanned(self.line, self.column));
                                         continue;
+                                    }
+                                }
+                            }
+                        }
+
+                        // struct
+                        's' => {
+                            if self.is_next('t') {
+                                self.advance();
+                                if self.is_next('r') {
+                                    self.advance();
+                                    if self.is_next('u') {
+                                        self.advance();
+                                        if self.is_next('c') {
+                                            self.advance();
+                                            if self.is_next('t') {
+                                                self.advance();
+                                                if !self.is_next_alphanumeric() {
+                                                    self.advance();
+                                                    tokens.push(Token::Keyword(self::Keyword::Struct).spanned(self.line, self.column));
+                                                    continue;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
