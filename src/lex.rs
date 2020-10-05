@@ -39,6 +39,44 @@ pub enum Token<'input> {
     CloseSquareBracket, // ']'
 }
 
+impl<'input> std::fmt::Display for Token<'input> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Token::Number(number) => format!("numeric literal: {}", number),
+            Token::Ident(ident) => format!("identifier: {}", ident),
+            Token::Keyword(keyword) => {
+                let word = match keyword {
+                    Keyword::Let => "let",
+                    Keyword::Mut => "mut",
+                    Keyword::Fn => "fn",
+                    Keyword::For => "for",
+                    Keyword::Struct => "struct",
+                };
+                format!("keyword: {}", word)
+            },
+            Token::Minus => "-".to_owned(),
+            Token::Plus => "+".to_owned(),
+            Token::Asterisk => "*".to_owned(),
+            Token::Slash => "/".to_owned(),
+            Token::Equals => "=".to_owned(),
+            Token::LeftAngleBracket => "<".to_owned(),
+            Token::RightAngleBracket => ">".to_owned(),
+            Token::Comma => ",".to_owned(),
+            Token::Colon => ":".to_owned(),
+            Token::Semicolon => ";".to_owned(),
+            Token::Whitespace => panic!("TODO: Display whitespace?"),
+            Token::OpenParen => "(".to_owned(),
+            Token::CloseParen => ")".to_owned(),
+            Token::OpenCurlyBrace => "{".to_owned(),
+            Token::CloseCurlyBrace => "}".to_owned(),
+            Token::OpenSquareBracket => "[".to_owned(),
+            Token::CloseSquareBracket => "]".to_owned(),
+        };
+
+        write!(f, "{}", string)
+    }
+}
+
 impl<'input> Token<'input> {
     pub fn is_number(&self) -> bool {
         if let Token::Number(_) = self { true } else { false }

@@ -16,7 +16,7 @@ fn test2() {}
 // fn with return type and no fields
 fn test3() -> type1 {}
 
-// fn with fields and return type
+// fn with mut field and return type
 fn fn_name(mut param1: type1, param2: type2) -> return_type {
     // let with assign
     let mut variable: var_type = 1;
@@ -30,7 +30,7 @@ fn fn_name(mut param1: type1, param2: type2) -> return_type {
     let variable: var_type;
     let variable;
 
-    // op-assignments
+    // assignments
     variable += 1;
     variable -= 2;
     variable *= 3;
@@ -40,4 +40,11 @@ fn fn_name(mut param1: type1, param2: type2) -> return_type {
     // expression assignments
     variable1 += variable2;
     variable1 = variable2;
+
+    // associative expressions
+    variable = 1 + 2 + 3 - 1 - variable + 7;
+    // parenthesized expression
+    variable2 = (7 * 3);
+    // precedence-ordered expression
+    variable3 *= 3 - ((1 + variable) * 3) / 8;
 }

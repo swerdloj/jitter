@@ -1,3 +1,5 @@
+use crate::lex::Token;
+
 // TODO: Add spans
 
 pub type AST<'input> = Vec<TopLevel<'input>>;
@@ -68,6 +70,8 @@ pub enum Expression<'input> {
         expr: Box<Expression<'input>>,
     },
 
+    Parenthesized(Box<Expression<'input>>),
+
     Literal(Literal),
     Ident(&'input str),
 }
@@ -90,6 +94,19 @@ pub enum BinaryOp {
     Divide,
 }
 
+impl BinaryOp {
+    pub fn from_token(symbol_token: &Token) -> Self {
+        match symbol_token {
+            Token::Plus => BinaryOp::Add,
+            Token::Minus => BinaryOp::Subtract,
+            Token::Asterisk => BinaryOp::Multiply,
+            Token::Slash => BinaryOp::Divide,
+
+            _ => panic!("Cannot create BinaryOp from {:?}", symbol_token),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum AssignmentOp {
     Assign,
@@ -100,8 +117,7 @@ pub enum AssignmentOp {
 }
 
 impl AssignmentOp {
-    pub fn from_op(op_token: &crate::lex::Token) -> Self {
-        use crate::lex::Token;
+    pub fn from_token(op_token: &Token) -> Self {
         match op_token {
             Token::Equals => AssignmentOp::Assign,
             Token::Plus => AssignmentOp::AddAssign,
@@ -109,7 +125,7 @@ impl AssignmentOp {
             Token::Asterisk => AssignmentOp::MultiplyAssign,
             Token::Slash => AssignmentOp::DivideAssign,
 
-            _ => unreachable!()
+            _ => panic!("Cannot create AssignmentOp from {:?}", op_token),
         }
     }
 }

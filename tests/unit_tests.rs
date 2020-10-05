@@ -1,18 +1,28 @@
 #[cfg(test)]
 mod tests {
-    use parse_test::*;
+    use parse_test::{
+        lex::*,
+        parse::*,
+    };
 
     #[test]
     fn test_parser() {
+        let path = "./tests/test.lang";
+        let input = &std::fs::read_to_string(path).unwrap();
 
+        let tokens = Lexer::lex_str(path, input, true);
+
+        let parser = Parser::new(path, tokens);
+        parser.parse_AST();
     }
 
    #[test]
    fn test_lexer() {
-        use lex::*;
+        let path = "./tests/lex_test.txt";
+        let test_input = &std::fs::read_to_string(path).unwrap();
 
-        let test_input = "123 \t -7    for_ =_test * y2 /\r\n _3_:; fn\n (for){}let[] <>";
-        let test_tokens = Lexer::lex_str("", test_input, true)
+        // Remove spans
+        let test_tokens = Lexer::lex_str(path, test_input, true)
             .into_iter()
             .map(|spanned| {
                 spanned.token
@@ -20,29 +30,32 @@ mod tests {
             .collect::<Vec<Token>>();
 
         let expected = vec![
-            Token::Number(123),
+            Token::Number(1230),
+            Token::Ident("ident"),
+            Token::Ident("_0_1"),
+            Token::Ident("_1test"),
+            Token::Ident("test1_"),
+            Token::Keyword(Keyword::Fn),
+            Token::Keyword(Keyword::For),
+            Token::Keyword(Keyword::Struct),
+            Token::Keyword(Keyword::Let),
+            Token::Keyword(Keyword::Mut),
             Token::Minus,
-            Token::Number(7),
-            Token::Ident("for_"),
-            Token::Equals,
-            Token::Ident("_test"),
+            Token::Plus,
             Token::Asterisk,
-            Token::Ident("y2"),
             Token::Slash,
-            Token::Ident("_3_"),
+            Token::Equals,
+            Token::LeftAngleBracket,
+            Token::RightAngleBracket,
+            Token::Comma,
             Token::Colon,
             Token::Semicolon,
-            Token::Keyword(lex::Keyword::Fn),
             Token::OpenParen,
-            Token::Keyword(lex::Keyword::For),
             Token::CloseParen,
             Token::OpenCurlyBrace,
             Token::CloseCurlyBrace,
-            Token::Keyword(lex::Keyword::Let),
             Token::OpenSquareBracket,
             Token::CloseSquareBracket,
-            Token::LeftAngleBracket,
-            Token::RightAngleBracket,
         ];
 
         assert_eq!(test_tokens, expected);

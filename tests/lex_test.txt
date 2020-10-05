@@ -1,0 +1,18 @@
+// literals
+1230
+
+// identifiers
+ident
+_0_1
+_1test
+test1_
+
+// keywords
+fn
+for
+struct
+let
+mut
+
+// symbols
+- + * / = < > , : ; ( ) { } [ ]
