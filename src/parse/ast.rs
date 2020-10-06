@@ -1,7 +1,66 @@
 use crate::lex::Token;
 
-// TODO: Add spans
+macro_rules! make_ast_node {
+    ( $($t:ident $(, $l:lifetime)?);+ $(;)?) => {
+        // Create variants for the AST variant
+        #[derive(Debug)]
+        pub enum NodeData<'input> {
+            $(
+                $t($t$(<$l>)?),
+            )+
+        }
 
+        // Impl Into for the AST variant
+        $(
+            impl<'input> Into<NodeData<'input>> for $t$(<$l>)? {
+                fn into(self) -> NodeData<'input> {
+                    NodeData::$t(self)
+                }
+            }
+        )+
+    };
+}
+
+make_ast_node! {
+    TopLevel, 'input;
+    Function, 'input;
+    Struct, 'input;
+    StructField, 'input;
+    FunctionParameter, 'input;
+    Statement, 'input;
+    Expression, 'input;
+    Literal;
+    UnaryOp;
+    BinaryOp;
+    AssignmentOp;
+}
+
+// TODO: Get nodes from parser instead of AST variants
+#[derive(Debug)]
+pub struct Node<'input> {
+    data: NodeData<'input>,
+    span: crate::Span,
+    is_error_recovery_node: bool,
+}
+
+impl<'input> Node<'input> {
+    pub fn new(data: impl Into<NodeData<'input>>, span: crate::Span) -> Self {
+        Self {
+            data: data.into(),
+            span,
+            is_error_recovery_node: false,
+        }
+    }
+
+    pub fn poison(mut self) -> Self {
+        self.is_error_recovery_node = true;
+        self
+    }
+}
+
+///////////////// AST VARIANTS /////////////////
+
+// TEMP: See `Node`
 pub type AST<'input> = Vec<TopLevel<'input>>;
 
 #[derive(Debug)]

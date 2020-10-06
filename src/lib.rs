@@ -3,6 +3,9 @@ pub mod parse;
 
 #[derive(Debug)]
 pub struct Span {
+    // TODO: This should track left-pos to right-pos
+    // from: usize,
+    // to: usize,
     line: usize,
     column: usize,
 }

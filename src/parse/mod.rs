@@ -2,6 +2,9 @@ pub mod ast;
 
 use crate::lex::{Token, SpannedToken, Keyword};
 
+// TODO: Replace this macro with a printed error message, then return the expected
+// token as a poisoned Node to allow the parser to continue.
+
 /// Print error and its location, then exit without panic
 macro_rules! parser_error {
     ( $path:expr, $span:expr, $($item:expr),+) => {

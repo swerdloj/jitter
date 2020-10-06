@@ -1,3 +1,6 @@
+// TODO: 
+// Look into this: https://github.com/maciejhirsz/logos
+
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
     Let,
@@ -397,8 +400,7 @@ impl<'input> Lexer<'input> {
                 invalid => panic!("{}:{}:{}: Invalid character: `{}`", self.file_path, self.line, self.column, invalid)
             }; // end `let token = match`
 
-            if let Whitespace = token {}
-            else {   
+            if Whitespace != token {   
                 tokens.push(token.spanned(self.line, self.column));
             }
         } // end `loop`
