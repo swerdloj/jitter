@@ -1,5 +1,6 @@
 pub mod ast;
 
+use ast::Node;
 use crate::lex::{Token, SpannedToken, Keyword};
 
 // TODO: Replace this macro with a printed error message, then return the expected
@@ -12,13 +13,21 @@ macro_rules! parser_error {
 
         eprintln!(
             "Parsing Error at {}:{}:{}:\n\n{}\n",
-            $path, $span.line, $span.column,
+            $path, $span.start_line, $span.start_column,
             format!(  $($item,)+  )
         ); 
         
         std::process::exit(1);
     };
 }
+
+// TEMP:
+const span: crate::Span = crate::Span {
+    start_line: 0,
+    start_column: 0,
+    end_line: 0,
+    end_column: 0,
+};
 
 pub struct Parser<'a> {
     file_path: &'a str,
@@ -46,8 +55,12 @@ impl<'a> Parser<'a> {
         &self.tokens[*self.position.borrow()].span
     }
 
-    fn current(&self) -> &Token {
-        &self.tokens[*self.position.borrow()].token
+    fn current(&self) -> &SpannedToken {
+        &self.tokens[*self.position.borrow()]
+    }
+
+    fn current_token(&self) -> &Token {
+        &self.current().token
     }
 
     fn advance(&self) {
@@ -65,10 +78,10 @@ impl<'a> Parser<'a> {
         ast
     }
 
-    pub fn parse_top_level(&self) -> ast::TopLevel {
+    pub fn parse_top_level(&self) -> Node<ast::TopLevel> {
         let item;
 
-        match self.current() {
+        match self.current_token() {
             Token::Keyword(keyword) => {
                 match keyword {
                     Keyword::Fn => {
@@ -88,70 +101,73 @@ impl<'a> Parser<'a> {
                     }
 
                     _ => {
-                        parser_error!(self.file_path, self.current_span(), "Expected one of TODO:. Found unexpected keyword `{}`", self.current());
+                        parser_error!(self.file_path, self.current_span(), "Expected one of TODO:. Found unexpected keyword `{}`", self.current_token());
                     }
                 }
             }
 
             // Not a valid TopLevel item
             _ => {
-                parser_error!(self.file_path, self.current_span(), "Expected a TODO:. Found unexpected token `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected a TODO:. Found unexpected token `{}`", self.current_token());
             }
         }
 
-        item
+        Node::new(item, span)
     }
 
     // TODO: Do I want tuple structs and/or unit structs?
     // struct ident {field1: type1, ..}
-    pub fn parse_struct_definition(&self) -> ast::Struct {
-        if let Token::Ident(name) = self.current() {
+    pub fn parse_struct_definition(&self) -> Node<ast::Struct> {
+        if let Token::Ident(name) = self.current_token() {
             self.advance();
-            if let Token::OpenCurlyBrace = self.current() {
+            if let Token::OpenCurlyBrace = self.current_token() {
                 self.advance();
                 let fields = self.parse_struct_fields();
-                ast::Struct {
+                let item = ast::Struct {
                     name,
                     fields,
-                }
+                };
+
+                Node::new(item, span)
             } else {
-                parser_error!(self.file_path, self.current_span(), "Expected `{{` after struct name. Found `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected `{{` after struct name. Found `{}`", self.current_token());
             }
         } else {
-            parser_error!(self.file_path, self.current_span(), "Expected identifier after keyword `struct`. Found `{}`", self.current());
+            parser_error!(self.file_path, self.current_span(), "Expected identifier after keyword `struct`. Found `{}`", self.current_token());
         }
     }
 
-    pub fn parse_struct_fields(&self) -> Vec<ast::StructField> {
+    pub fn parse_struct_fields(&self) -> Vec<Node<ast::StructField>> {
         let mut fields = Vec::new();
         
         loop {
             // Allows one comma after the final field
-            if let Token::Comma = self.current() {
+            if let Token::Comma = self.current_token() {
                 parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed after struct fields");
             }
 
-            if let Token::Ident(field_name) = self.current() {
+            if let Token::Ident(field_name) = self.current_token() {
                 self.advance();
-                if let Token::Colon = self.current() {
+                if let Token::Colon = self.current_token() {
                     self.advance();
-                    if let Token::Ident(field_type) = self.current() {
+                    if let Token::Ident(field_type) = self.current_token() {
                         self.advance();
+                        let field = ast::StructField {
+                            field_name,
+                            field_type,
+                        };
                         fields.push(
-                            ast::StructField {
-                                field_name,
-                                field_type,
-                            }
+                            Node::new(field, span)
                         );
                     } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current());
+                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
                     }
                 } else {
-                    parser_error!(self.file_path, self.current_span(), "Expected `:` after struct field name. Found `{}`", self.current());
+                    parser_error!(self.file_path, self.current_span(), "Expected `:` after struct field name. Found `{}`", self.current_token());
                 }
             }
 
-            if let Token::Comma = self.current() {
+            if let Token::Comma = self.current_token() {
                 self.advance();
                 continue;
             }
@@ -159,103 +175,104 @@ impl<'a> Parser<'a> {
             break;
         }
 
-        if let Token::CloseCurlyBrace = self.current() {
+        if let Token::CloseCurlyBrace = self.current_token() {
             self.advance();
         } else {
-            parser_error!(self.file_path, self.current_span(), "Expected `}}` to end struct declaration. Found `{}`", self.current());
+            parser_error!(self.file_path, self.current_span(), "Expected `}}` to end struct declaration. Found `{}`", self.current_token());
         }
 
         fields
     }
 
     // fn ident(param: type, ..) -> return_type { statements }
-    pub fn parse_function_definition(&self) -> ast::Function {
-        if let Token::Ident(name) = self.current() {
+    pub fn parse_function_definition(&self) -> Node<ast::Function> {
+        if let Token::Ident(name) = self.current_token() {
             self.advance();
 
-            let parameters = if let Token::OpenParen = self.current() {
+            let parameters = if let Token::OpenParen = self.current_token() {
                 self.advance();
                 self.parse_function_parameters()
             } else {
-                panic!("Expected `(` after function name. Found `{}`", self.current());
+                panic!("Expected `(` after function name. Found `{}`", self.current_token());
             };
 
-            let return_type = if let Token::Minus = self.current() {
+            let return_type = if let Token::Minus = self.current_token() {
                 self.advance();
 
-                if let Token::RightAngleBracket = self.current() {
+                if let Token::RightAngleBracket = self.current_token() {
                     self.advance();
 
-                    if let Token::Ident(return_type) = self.current() {
+                    if let Token::Ident(return_type) = self.current_token() {
                         self.advance();
                         Some(*return_type)
                     } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current());
+                        parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current_token());
                     }
                 } else {
-                    parser_error!(self.file_path, self.current_span(), "Expected `->`. Found `{}`", self.current());
+                    parser_error!(self.file_path, self.current_span(), "Expected `->`. Found `{}`", self.current_token());
                 }
             } else {
                 None
             };
 
-            let statements = if let Token::OpenCurlyBrace = self.current() {
+            let statements = if let Token::OpenCurlyBrace = self.current_token() {
                 self.advance();
                 self.parse_statement_block()
             } else {
-                parser_error!(self.file_path, self.current_span(), "Expected `{{` to form a statement block implementing a function. Found `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected `{{` to form a statement block implementing a function. Found `{}`", self.current_token());
             };
 
-            ast::Function {
+            let function = ast::Function {
                 name,
                 parameters,
                 return_type,
                 statements,
-            }
+            };
+
+            Node::new(function, span)
         } else {
-            parser_error!(self.file_path, self.current_span(), "Expected identifier, found `{}` while parsing function definition", self.current());
+            parser_error!(self.file_path, self.current_span(), "Expected identifier, found `{}` while parsing function definition", self.current_token());
         }
     }
 
     // (ident: type, ident: type, ..)
-    pub fn parse_function_parameters(&self) -> Vec<ast::FunctionParameter> {
+    pub fn parse_function_parameters(&self) -> Vec<Node<ast::FunctionParameter>> {
         let mut parameters = Vec::new();
         
         loop {
             let mut mutable = false;
 
             // Allows one comma after the final field
-            if let Token::Comma = self.current() {
+            if let Token::Comma = self.current_token() {
                 parser_error!(self.file_path, self.current_span(), "Only one additional comma is allowed in function parameters following the final parameter");
             }
 
-            if let Token::Keyword(Keyword::Mut) = self.current() {
+            if let Token::Keyword(Keyword::Mut) = self.current_token() {
                 self.advance();
                 mutable = true;
             }
 
-            if let Token::Ident(field_name) = self.current() {
+            if let Token::Ident(field_name) = self.current_token() {
                 self.advance();
-                if let Token::Colon = self.current() {
+                if let Token::Colon = self.current_token() {
                     self.advance();
-                    if let Token::Ident(field_type) = self.current() {
+                    if let Token::Ident(field_type) = self.current_token() {
                         self.advance();
-                        parameters.push(
-                            ast::FunctionParameter {
-                                mutable,
-                                field_name,
-                                field_type,
-                            }
-                        );
+                        let param = ast::FunctionParameter {
+                            mutable,
+                            field_name,
+                            field_type,
+                        };
+                        parameters.push(Node::new(param, span));
                     } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current());
+                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
                     }
                 } else {
-                    parser_error!(self.file_path, self.current_span(), "Expected `:` after function parameter. Found `{}`", self.current());
+                    parser_error!(self.file_path, self.current_span(), "Expected `:` after function parameter. Found `{}`", self.current_token());
                 }
             }
 
-            if let Token::Comma = self.current() {
+            if let Token::Comma = self.current_token() {
                 self.advance();
                 continue;
             }
@@ -263,20 +280,20 @@ impl<'a> Parser<'a> {
             break;
         }
 
-        if let Token::CloseParen = self.current() {
+        if let Token::CloseParen = self.current_token() {
             self.advance();
         } else {
-            parser_error!(self.file_path, self.current_span(), "Expected `)` to end function parameter list. Found `{}`", self.current());
+            parser_error!(self.file_path, self.current_span(), "Expected `)` to end function parameter list. Found `{}`", self.current_token());
         }
 
         parameters
     }
 
-    pub fn parse_statement_block(&self) -> Vec<ast::Statement> {
+    pub fn parse_statement_block(&self) -> Vec<Node<ast::Statement>> {
         let mut statements = Vec::new();
 
         loop {
-            if let Token::CloseCurlyBrace = self.current() {
+            if let Token::CloseCurlyBrace = self.current_token() {
                 self.advance();
                 break;
             }
@@ -288,24 +305,24 @@ impl<'a> Parser<'a> {
         statements
     }
 
-    pub fn parse_statement(&self) -> ast::Statement {
+    pub fn parse_statement(&self) -> Node<ast::Statement> {
         // expects semicolon in a reusable code bit
         let expect_semicolon = || {
-            if let Token::Semicolon = self.current() {
+            if let Token::Semicolon = self.current_token() {
                 self.advance();
             } else {
-                parser_error!(self.file_path, self.current_span(), "Expected `;` to terminate a statement. Found `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected `;` to terminate a statement. Found `{}`", self.current_token());
             }
         };
 
         let statement;
 
-        match self.current() {
+        match self.current_token() {
             // let mut ident: type = expr;
             Token::Keyword(Keyword::Let) => {
                 self.advance();
 
-                let mutable = if Token::Keyword(Keyword::Mut) == *self.current() {
+                let mutable = if Token::Keyword(Keyword::Mut) == *self.current_token() {
                     self.advance();
                     true
                 } else {
@@ -316,30 +333,30 @@ impl<'a> Parser<'a> {
                 let type_;
                 let expression;
 
-                if let Token::Ident(ident_) = self.current() {
+                if let Token::Ident(ident_) = self.current_token() {
                     self.advance();
                     ident = ident_;
 
-                    type_ = if let Token::Colon = self.current() {
+                    type_ = if let Token::Colon = self.current_token() {
                         self.advance();
-                        if let Token::Ident(type_) = self.current() {
+                        if let Token::Ident(type_) = self.current_token() {
                             self.advance();
                             Some(*type_)
                         } else {
-                            parser_error!(self.file_path, self.current_span(), "Expected type after `:`. Found `{}`", self.current());
+                            parser_error!(self.file_path, self.current_span(), "Expected type after `:`. Found `{}`", self.current_token());
                         }
                     } else {
                         None
                     };
 
-                    expression = if let Token::Equals = self.current() {
+                    expression = if let Token::Equals = self.current_token() {
                         self.advance();
                         Some(self.parse_expression())
                     } else {
                         None
                     };
                 } else {
-                    parser_error!(self.file_path, self.current_span(), "Expected identifier after `let`. Found `{}`", self.current());
+                    parser_error!(self.file_path, self.current_span(), "Expected identifier after `let`. Found `{}`", self.current_token());
                 }
                 
                 expect_semicolon();
@@ -355,7 +372,7 @@ impl<'a> Parser<'a> {
             // TODO: `.` access, function calls
             Token::Ident(ident) => {
                 self.advance();
-                match self.current() {
+                match self.current_token() {
                     // x [+=, -=, *=, /=] expression
                     Token::Equals
                     | Token::Plus
@@ -365,20 +382,20 @@ impl<'a> Parser<'a> {
                         let operator = self.current();
 
                         // Special case (advance past the op in an op-assign)
-                        if !(Token::Equals == *self.current()) {
+                        if !(Token::Equals == *self.current_token()) {
                             self.advance();
                         }
-                        if let Token::Equals = *self.current() {
+                        if let Token::Equals = *self.current_token() {
                             self.advance();
                             statement = ast::Statement::Assign {
                                 variable: ident,
-                                operator: ast::AssignmentOp::from_token(operator),
+                                operator: ast::AssignmentOp::from_spanned_token(operator),
                                 expression: self.parse_expression(),
                             };
 
                             expect_semicolon();
                         } else {
-                            parser_error!(self.file_path, self.current_span(), "Expected `=` to create an op-assign statement. Found `{}`", self.current());
+                            parser_error!(self.file_path, self.current_span(), "Expected `=` to create an op-assign statement. Found `{}`", self.current_token());
                         }
                     }
 
@@ -388,46 +405,47 @@ impl<'a> Parser<'a> {
                     }
 
                     _ => {
-                        parser_error!(self.file_path, self.current_span(), "Expected beginning of statement. Found `{}`", self.current());
+                        parser_error!(self.file_path, self.current_span(), "Expected beginning of statement. Found `{}`", self.current_token());
                     }
                 }
             }
 
             _ => {
                 // TODO: Could it be an expression?
-                parser_error!(self.file_path, self.current_span(), "Expected a statement. Found `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected a statement. Found `{}`", self.current_token());
             }
         }
 
-        statement
+        Node::new(statement, span)
     }
 
     //////////////// ONLY EXPRESSIONS BELOW THIS LINE ////////////////
     ////////// Precedence: Lowest at top, highest at bottom //////////
 
     // Employs recursive descent
-    fn parse_expression(&self) -> ast::Expression {
+    fn parse_expression(&self) -> Node<ast::Expression> {
         self.parse_expression_additive()
     }
 
     // Precedence for [+, -]
-    fn parse_expression_additive(&self) -> ast::Expression {
+    fn parse_expression_additive(&self) -> Node<ast::Expression> {
         let mut expression = self.parse_expression_multiplicative();
 
         // loop => associative
         // Note that the expression is built up with each iteration
         loop {
-            match self.current() {
+            match self.current_token() {
                 Token::Plus | Token::Minus => {
                     let op_token = self.current();
                     self.advance();
 
                     let rhs = self.parse_expression_multiplicative();
-                    expression = ast::Expression::BinaryExpression {
+                    let expr = ast::Expression::BinaryExpression {
                         lhs: Box::new(expression),
-                        op: ast::BinaryOp::from_token(op_token),
+                        op: ast::BinaryOp::from_spanned_token(op_token),
                         rhs: Box::new(rhs),
                     };
+                    expression = Node::new(expr, span);
                 }
 
                 _ => break,
@@ -438,21 +456,22 @@ impl<'a> Parser<'a> {
     }
 
     // Precedence for [*, /]
-    fn parse_expression_multiplicative(&self) -> ast::Expression {
+    fn parse_expression_multiplicative(&self) -> Node<ast::Expression> {
         let mut expression = self.parse_expression_base();
 
         loop {
-            match self.current() {
+            match self.current_token() {
                 Token::Asterisk | Token::Slash => {
                     let op_token = self.current();
                     self.advance();
 
                     let rhs = self.parse_expression_base();
-                    expression = ast::Expression::BinaryExpression {
+                    let expr = ast::Expression::BinaryExpression {
                         lhs: Box::new(expression),
-                        op: ast::BinaryOp::from_token(op_token),
+                        op: ast::BinaryOp::from_spanned_token(op_token),
                         rhs: Box::new(rhs),
                     };
+                    expression = Node::new(expr, span);
                 }
 
                 _ => break,
@@ -463,21 +482,21 @@ impl<'a> Parser<'a> {
     }
 
     // Precedence for [parentheticals, literals, identifiers]
-    fn parse_expression_base(&self) -> ast::Expression {
+    fn parse_expression_base(&self) -> Node<ast::Expression> {
         let expression;
 
         // Base cases
-        match self.current() {
+        match self.current_token() {
             // ( expression )
             Token::OpenParen => {
                 self.advance();
                 expression = ast::Expression::Parenthesized(
                     Box::new(self.parse_expression())
                 );
-                if let Token::CloseParen = self.current() {
+                if let Token::CloseParen = self.current_token() {
                     self.advance();
                 } else {
-                    parser_error!(self.file_path, self.current_span(), "Expected ')' to end parenthesized expression. Found `{}`", self.current());
+                    parser_error!(self.file_path, self.current_span(), "Expected ')' to end parenthesized expression. Found `{}`", self.current_token());
                 }
             }
 
@@ -494,10 +513,10 @@ impl<'a> Parser<'a> {
             }
 
             _ => {
-                parser_error!(self.file_path, self.current_span(), "Expected a base expression. Found `{}`", self.current());
+                parser_error!(self.file_path, self.current_span(), "Expected a base expression. Found `{}`", self.current_token());
             }
         }
 
-        expression
+        Node::new(expression, span)
     }
 }

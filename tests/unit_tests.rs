@@ -3,10 +3,26 @@ mod tests {
     use parse_test::{
         lex::*,
         parse::*,
+        Span,
     };
 
     #[test]
-    fn test_parser() {
+    fn nodes() {
+        use ast::*;
+
+        let child = Expression::Literal(Literal::Number(7));
+        let child_node = Node::new(child, Span::new(0, 0, 0, 0));
+
+        let parent = Expression::UnaryExpression {
+            op: Node::new(UnaryOp::Negate, Span::new(0, 0, 0, 0)),
+            expr: Box::new(child_node),
+        };
+
+        let _parent_node = Node::new(parent, Span::new(0, 0, 0, 0));
+    }
+
+    #[test]
+    fn parser() {
         let path = "./tests/test.lang";
         let input = &std::fs::read_to_string(path).unwrap();
 
@@ -17,7 +33,7 @@ mod tests {
     }
 
    #[test]
-   fn test_lexer() {
+   fn lexer() {
         let path = "./tests/lex_test.txt";
         let test_input = &std::fs::read_to_string(path).unwrap();
 

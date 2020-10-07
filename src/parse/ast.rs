@@ -1,52 +1,60 @@
-use crate::lex::Token;
+use crate::lex::{SpannedToken, Token};
 
-macro_rules! make_ast_node {
-    ( $($t:ident $(, $l:lifetime)?);+ $(;)?) => {
-        // Create variants for the AST variant
-        #[derive(Debug)]
-        pub enum NodeData<'input> {
-            $(
-                $t($t$(<$l>)?),
-            )+
-        }
+// TODO: Use a struct to add this data. That way, all child nodes will still be
+// forced to be of correct types (not just nodes).
+// macro_rules! make_ast_node {
+//     ( $($t:ident $(, $l:lifetime)?);+ $(;)?) => {
+//         // Create variants for the AST variant
+//         #[derive(Debug)]
+//         pub enum NodeData<'input> {
+//             $(
+//                 $t($t$(<$l>)?),
+//             )+
+//         }
 
-        // Impl Into for the AST variant
-        $(
-            impl<'input> Into<NodeData<'input>> for $t$(<$l>)? {
-                fn into(self) -> NodeData<'input> {
-                    NodeData::$t(self)
-                }
-            }
-        )+
-    };
-}
+//         // Impl Into for the AST variant
+//         $(
+//             impl<'input> Into<NodeData<'input>> for $t$(<$l>)? {
+//                 fn into(self) -> NodeData<'input> {
+//                     NodeData::$t(self)
+//                 }
+//             }
+//         )+
+//     };
+// }
 
-make_ast_node! {
-    TopLevel, 'input;
-    Function, 'input;
-    Struct, 'input;
-    StructField, 'input;
-    FunctionParameter, 'input;
-    Statement, 'input;
-    Expression, 'input;
-    Literal;
-    UnaryOp;
-    BinaryOp;
-    AssignmentOp;
-}
+// make_ast_node! {
+//     TopLevel, 'input;
+//     Function, 'input;
+//     Struct, 'input;
+//     StructField, 'input;
+//     FunctionParameter, 'input;
+//     Statement, 'input;
+//     Expression, 'input;
+//     Literal;
+//     UnaryOp;
+//     BinaryOp;
+//     AssignmentOp;
+// }
 
-// TODO: Get nodes from parser instead of AST variants
+// #[derive(Debug)]
+// pub struct Node<'input> {
+//     data: NodeData<'input>,
+//     span: crate::Span,
+//     is_error_recovery_node: bool,
+// }
+
 #[derive(Debug)]
-pub struct Node<'input> {
-    data: NodeData<'input>,
+pub struct Node<NodeType> {
+    item: NodeType,
     span: crate::Span,
     is_error_recovery_node: bool,
 }
 
-impl<'input> Node<'input> {
-    pub fn new(data: impl Into<NodeData<'input>>, span: crate::Span) -> Self {
+impl<T> Node<T> {
+    pub fn new(item: T, span: crate::Span) -> Self {
         Self {
-            data: data.into(),
+            item,
             span,
             is_error_recovery_node: false,
         }
@@ -60,13 +68,13 @@ impl<'input> Node<'input> {
 
 ///////////////// AST VARIANTS /////////////////
 
-// TEMP: See `Node`
-pub type AST<'input> = Vec<TopLevel<'input>>;
+
+pub type AST<'input> = Vec<Node<TopLevel<'input>>>;
 
 #[derive(Debug)]
 pub enum TopLevel<'input> {
-    Function(Function<'input>),
-    Struct(Struct<'input>),
+    Function(Node<Function<'input>>),
+    Struct(Node<Struct<'input>>),
     ConstDeclaration,
     UseStatement,
 }
@@ -74,15 +82,15 @@ pub enum TopLevel<'input> {
 #[derive(Debug)]
 pub struct Function<'input> {
     pub name: &'input str,
-    pub parameters: Vec<FunctionParameter<'input>>,
+    pub parameters: Vec<Node<FunctionParameter<'input>>>,
     pub return_type: Option<&'input str>,
-    pub statements: Vec<Statement<'input>>,
+    pub statements: Vec<Node<Statement<'input>>>,
 }
 
 #[derive(Debug)]
 pub struct Struct<'input> {
     pub name: &'input str,
-    pub fields: Vec<StructField<'input>>,
+    pub fields: Vec<Node<StructField<'input>>>,
 }
 
 #[derive(Debug)]
@@ -104,32 +112,32 @@ pub enum Statement<'input> {
         ident: &'input str,
         mutable: bool,
         type_: Option<&'input str>,
-        value: Option<Expression<'input>>,
+        value: Option<Node<Expression<'input>>>,
     },
 
     Assign {
         variable: &'input str,
-        operator: AssignmentOp,
-        expression: Expression<'input>,
+        operator: Node<AssignmentOp>,
+        expression: Node<Expression<'input>>,
     },
 
-    Expression(Expression<'input>),
+    Expression(Node<Expression<'input>>),
 }
 
 #[derive(Debug)]
 pub enum Expression<'input> {
     BinaryExpression {
-        lhs: Box<Expression<'input>>,
-        op: BinaryOp,
-        rhs: Box<Expression<'input>>,
+        lhs: Box<Node<Expression<'input>>>,
+        op: Node<BinaryOp>,
+        rhs: Box<Node<Expression<'input>>>,
     },
 
     UnaryExpression {
-        op: UnaryOp,
-        expr: Box<Expression<'input>>,
+        op: Node<UnaryOp>,
+        expr: Box<Node<Expression<'input>>>,
     },
 
-    Parenthesized(Box<Expression<'input>>),
+    Parenthesized(Box<Node<Expression<'input>>>),
 
     Literal(Literal),
     Ident(&'input str),
@@ -154,15 +162,17 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    pub fn from_token(symbol_token: &Token) -> Self {
-        match symbol_token {
+    pub fn from_spanned_token(symbol_token: &SpannedToken) -> Node<Self> {
+        let op = match symbol_token.token {
             Token::Plus => BinaryOp::Add,
             Token::Minus => BinaryOp::Subtract,
             Token::Asterisk => BinaryOp::Multiply,
             Token::Slash => BinaryOp::Divide,
 
             _ => panic!("Cannot create BinaryOp from {:?}", symbol_token),
-        }
+        };
+
+        Node::new(op, symbol_token.span)
     }
 }
 
@@ -176,8 +186,8 @@ pub enum AssignmentOp {
 }
 
 impl AssignmentOp {
-    pub fn from_token(op_token: &Token) -> Self {
-        match op_token {
+    pub fn from_spanned_token(op_token: &SpannedToken) -> Node<Self> {
+        let op = match op_token.token {
             Token::Equals => AssignmentOp::Assign,
             Token::Plus => AssignmentOp::AddAssign,
             Token::Minus => AssignmentOp::SubtractAssign,
@@ -185,6 +195,8 @@ impl AssignmentOp {
             Token::Slash => AssignmentOp::DivideAssign,
 
             _ => panic!("Cannot create AssignmentOp from {:?}", op_token),
-        }
+        };
+
+        Node::new(op, op_token.span)
     }
 }

@@ -93,10 +93,15 @@ impl<'input> Token<'input> {
 }
 
 impl<'input> Token<'input> {
-    pub fn spanned(self, line: usize, col: usize) -> SpannedToken<'input> {
+    pub fn spanned(self, start_line: usize, start_column: usize, end_line: usize, end_column: usize) -> SpannedToken<'input> {
         SpannedToken {
             token: self,
-            span: crate::Span::new(line, col),
+            span: crate::Span {
+                start_line,
+                start_column,
+                end_line,
+                end_column,
+            },
         }
     }
 }
@@ -112,8 +117,12 @@ pub struct Lexer<'input> {
     input: &'input str,
     bytes: &'input [u8],
     position: usize,
-    line: usize,
-    column: usize,
+
+    last_line: usize,
+    last_column: usize,
+    current_line: usize,
+    current_column: usize,
+
     strip_whitespace: bool,
 }
 
@@ -124,10 +133,21 @@ impl<'input> Lexer<'input> {
             input,
             bytes: input.as_bytes(),
             position: 0,
-            line: 1,
-            column: 0,
+            last_line: 0,
+            last_column: 0,
+            current_line: 1,
+            current_column: 0,
             strip_whitespace,
         }
+    }
+
+    fn make_spanned<'a>(&self, token: Token<'a>) -> SpannedToken<'a> {
+        token.spanned(self.last_line, self.last_column, self.current_line, self.current_column)
+    }
+
+    pub fn reset_last_position(&mut self) {
+        self.last_line = self.current_line;
+        self.last_column = self.current_column;
     }
 
     /// Converts the given input to tokens. `file_path` is used only for printing errors.
@@ -139,7 +159,7 @@ impl<'input> Lexer<'input> {
     /// Advances the lexer forward one character
     fn advance(&mut self) {
         self.position += 1;
-        self.column += 1;
+        self.current_column += 1;
     }
 
     /// Returns the character at the current position
@@ -148,263 +168,295 @@ impl<'input> Lexer<'input> {
     }
 
     /// Returns the next character. Returns `None` if no characters remain.
-    fn peek_next(&mut self) -> Option<char> {
-        self.bytes.get(self.position + 1).map(|byte| *byte as char)
+    fn peek_next(&mut self) -> Result<char, String> {
+        self.bytes.get(self.position + 1)
+            .map(|byte| *byte as char)
+            .ok_or("Unexpected EOF".to_owned())
     }
 
     /// Returns true if the next character is the desired character
-    fn is_next(&mut self, c: char) -> bool {
-        if let Some(next) = self.peek_next() {
-            if next == c {
-                return true;
-            }
+    fn is_next(&mut self, c: char) -> Result<bool, String> {
+        if self.peek_next()? == c {
+            Ok(true)
+        } else {   
+            Ok(false)
         }
-
-        false
     }
 
     /// Returns whether the next character is an ascii letter, number, or underscore
-    fn is_next_alphanumeric(&mut self) -> bool {
-        if let Some(next) = self.peek_next() {
-            if next.is_ascii_alphanumeric() || next == '_' {
-                return true;
+    fn is_next_alphanumeric(&mut self) -> Result<bool, String> {
+        let next = self.peek_next()?;
+        if next.is_ascii_alphanumeric() || next == '_' {
+            Ok(true)
+        } else {   
+            Ok(false)
+        }
+    }
+
+    // TODO: Don't exit, but flag the parser to not finish compilation
+    pub fn lex(&mut self) -> Vec<SpannedToken<'input>> {
+        let mut tokens = Vec::new();
+        let mut errors = Vec::new();
+
+        while self.position < self.bytes.len() {
+            match self.lex_next_token() {
+                Ok(token) => {
+                    if self.strip_whitespace {
+                        if let Token::Whitespace = token.token {
+                            continue;
+                        }
+                    }
+        
+                    tokens.push(token);
+                }
+
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                }
             }
         }
 
-        false
+        if errors.len() > 0 {
+            println!("Lexing errors: \n");
+            for error in errors {
+                println!("{}", error);
+            }
+            // TEMP: This should just be a flag to return
+            std::process::exit(1);
+        }
+
+        tokens
     }
 
     /// Lexes the input, returning spanned tokens
-    pub fn lex(&mut self) -> Vec<SpannedToken<'input>> {
+    fn lex_next_token(&mut self) -> Result<SpannedToken<'input>, String> {
         use Token::*;
-    
-        let mut tokens = Vec::new();
-    
-        while self.position < self.bytes.len() {
-            let token = match self.current() {
-                // Ignore whitespace
-                it if it.is_whitespace() => {
-                    // Handle new lines
-                    if it == '\n' {
-                        self.column = 0;
-                        self.line += 1;
-                    }
+        
+        self.reset_last_position();
 
-                    self.advance();
-                    if self.strip_whitespace {  
-                        continue;
+        let token = match self.current() {
+            // Ignore whitespace
+            it if it.is_whitespace() => {
+                // Handle new lines
+                if it == '\n' {
+                    self.current_column = 0;
+                    self.current_line += 1;
+                }
+
+                self.advance();
+
+                Whitespace
+            }
+
+            '+' => {
+                self.advance();
+                Plus
+            }
+            '-' => {
+                self.advance();
+                Minus
+            }
+            // slash or single-line comment
+            '/' => {
+                self.advance();
+                if self.current() == '/' {
+                    while self.current() != '\n' {
+                        self.advance();
                     }
+                    // don't advance here to re-use whitespace logic
                     Whitespace
-                }
-
-                '+' => {
-                    self.advance();
-                    Plus
-                }
-                '-' => {
-                    self.advance();
-                    Minus
-                }
-                // slash or single-line comment
-                '/' => {
-                    self.advance();
-                    if self.current() == '/' {
-                        while self.current() != '\n' {
-                            self.advance();
-                        }
-                        // don't advance here to re-use whitespace logic
-                        continue;
-                    }
-
+                } else {   
                     Slash
                 }
-                '*' => {
-                    self.advance();
-                    Asterisk
-                }
-                '=' => {
-                    self.advance();
-                    Equals
-                }
-                ',' => {
-                    self.advance();
-                    Comma
-                }
-                ':' => {
-                    self.advance();
-                    Colon
-                }
-                ';' => {
-                    self.advance();
-                    Semicolon
-                }
-                '(' => {
-                    self.advance();
-                    OpenParen
-                }
-                ')' => {
-                    self.advance();
-                    CloseParen
-                }
-                '{' => {
-                    self.advance();
-                    OpenCurlyBrace
-                }
-                '}' => {
-                    self.advance();
-                    CloseCurlyBrace
-                }
-                '[' => {
-                    self.advance();
-                    OpenSquareBracket
-                }
-                ']' => {
-                    self.advance();
-                    CloseSquareBracket
-                }
-                '<' => {
-                    self.advance();
-                    LeftAngleBracket
-                }
-                '>' => {
-                    self.advance();
-                    RightAngleBracket
-                }
+            }
+            '*' => {
+                self.advance();
+                Asterisk
+            }
+            '=' => {
+                self.advance();
+                Equals
+            }
+            ',' => {
+                self.advance();
+                Comma
+            }
+            ':' => {
+                self.advance();
+                Colon
+            }
+            ';' => {
+                self.advance();
+                Semicolon
+            }
+            '(' => {
+                self.advance();
+                OpenParen
+            }
+            ')' => {
+                self.advance();
+                CloseParen
+            }
+            '{' => {
+                self.advance();
+                OpenCurlyBrace
+            }
+            '}' => {
+                self.advance();
+                CloseCurlyBrace
+            }
+            '[' => {
+                self.advance();
+                OpenSquareBracket
+            }
+            ']' => {
+                self.advance();
+                CloseSquareBracket
+            }
+            '<' => {
+                self.advance();
+                LeftAngleBracket
+            }
+            '>' => {
+                self.advance();
+                RightAngleBracket
+            }
 
-                // Ident or Keyword
-                it if it.is_ascii_alphabetic() || it == '_' => {
-                    let from = self.position;
+            // Ident or Keyword
+            it if it.is_ascii_alphabetic() || it == '_' => {
+                let from = self.position;
 
-                    // TODO: This could be simplified quite a bit. Consider a macro?
-                    // NOTE: Could just treat everything as idents, then check those for keywords,
-                    //       but this is much faster
-                    match it {
-                        'f' => {
-                            // fn
-                            if self.is_next('n') {
+                let mut token = None;
+
+                // TODO: This could be simplified quite a bit. Consider a macro?
+                // NOTE: Could just treat everything as idents, then check those for keywords,
+                //       but this is much faster
+                match it {
+                    'f' => {
+                        // fn
+                        if self.is_next('n')? {
+                            self.advance();
+                            if !self.is_next_alphanumeric()? {
                                 self.advance();
-                                if !self.is_next_alphanumeric() {
-                                    self.advance();
-                                    tokens.push(Token::Keyword(self::Keyword::Fn).spanned(self.line, self.column));
-                                    continue;
-                                }
-                            // for
-                            } else if self.is_next('o') {
+                                token = Some(Token::Keyword(self::Keyword::Fn));
+                            }
+                        // for
+                        } else if self.is_next('o')? {
+                            self.advance();
+                            if self.is_next('r')? {
                                 self.advance();
-                                if self.is_next('r') {
+                                if !self.is_next_alphanumeric()? {
                                     self.advance();
-                                    if !self.is_next_alphanumeric() {
-                                        self.advance();
-                                        tokens.push(Token::Keyword(self::Keyword::For).spanned(self.line, self.column));
-                                        continue;
-                                    }
+                                    token = Some(Token::Keyword(self::Keyword::For));
                                 }
                             }
                         }
+                    }
 
-                        // let
-                        'l' => {
-                            if self.is_next('e') {
+                    // let
+                    'l' => {
+                        if self.is_next('e')? {
+                            self.advance();
+                            if self.is_next('t')? {
                                 self.advance();
-                                if self.is_next('t') {
+                                if !self.is_next_alphanumeric()? {
                                     self.advance();
-                                    if !self.is_next_alphanumeric() {
-                                        self.advance();
-                                        tokens.push(Token::Keyword(self::Keyword::Let).spanned(self.line, self.column));
-                                        continue;
-                                    }
+                                    token = Some(Token::Keyword(self::Keyword::Let));
                                 }
                             }
                         }
+                    }
 
-                        // mut
-                        'm' => {
-                            if self.is_next('u') {
+                    // mut
+                    'm' => {
+                        if self.is_next('u')? {
+                            self.advance();
+                            if self.is_next('t')? {
                                 self.advance();
-                                if self.is_next('t') {
+                                if !self.is_next_alphanumeric()? {
                                     self.advance();
-                                    if !self.is_next_alphanumeric() {
-                                        self.advance();
-                                        tokens.push(Token::Keyword(self::Keyword::Mut).spanned(self.line, self.column));
-                                        continue;
-                                    }
+                                    token = Some(Token::Keyword(self::Keyword::Mut));
                                 }
                             }
                         }
+                    }
 
-                        // struct
-                        's' => {
-                            if self.is_next('t') {
+                    // struct
+                    's' => {
+                        if self.is_next('t')? {
+                            self.advance();
+                            if self.is_next('r')? {
                                 self.advance();
-                                if self.is_next('r') {
+                                if self.is_next('u')? {
                                     self.advance();
-                                    if self.is_next('u') {
+                                    if self.is_next('c')? {
                                         self.advance();
-                                        if self.is_next('c') {
+                                        if self.is_next('t')? {
                                             self.advance();
-                                            if self.is_next('t') {
+                                            if !self.is_next_alphanumeric()? {
                                                 self.advance();
-                                                if !self.is_next_alphanumeric() {
-                                                    self.advance();
-                                                    tokens.push(Token::Keyword(self::Keyword::Struct).spanned(self.line, self.column));
-                                                    continue;
-                                                }
+                                                token = Some(Token::Keyword(self::Keyword::Struct));
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-
-                        // Not a keyword => identifier
-                        _ => {}
                     }
 
-                    while let Some(next) = self.peek_next() {
+                    // Not a keyword => identifier
+                    _ => {}
+                }
+
+                if let Some(token) = token {
+                    token
+                } else {
+                    while let Ok(next) = self.peek_next() {
                         if next.is_ascii_alphanumeric() || next == '_' {
                             self.advance();
                         } else {
                             break;
                         }
                     }
-
+                    
                     let to = self.position;
-
+                    
                     self.advance();
-
+                    
                     Ident(&self.input[from..=to])
                 }
-    
-                it if it.is_digit(10) => {
-                    let from = self.position;
-
-                    while let Some(next) = self.peek_next() {
-                        if next.is_digit(10) {
-                            self.advance();
-                        } else if next.is_ascii_alphabetic() || next == '_' {
-                            // TODO: Allow underscores after numbers
-                            panic!("{}:{}:{}: Invalid input: letter or underscore following a number", self.file_path, self.line, self.column);
-                        } else {
-                            break;
-                        }
-                    }
-
-                    let to = self.position;
-
-                    self.advance();
-
-                    // FIXME: There must be a better way to do this
-                    Number(self.input[from..=to].to_owned().parse().unwrap())
-                }
-    
-                invalid => panic!("{}:{}:{}: Invalid character: `{}`", self.file_path, self.line, self.column, invalid)
-            }; // end `let token = match`
-
-            if Whitespace != token {   
-                tokens.push(token.spanned(self.line, self.column));
             }
-        } // end `loop`
-    
-        tokens
+
+            it if it.is_digit(10) => {
+                let from = self.position;
+
+                while let Ok(next) = self.peek_next() {
+                    if next.is_digit(10) {
+                        self.advance();
+                    } else if next.is_ascii_alphabetic() || next == '_' {
+                        // TODO: Allow underscores after numbers
+                        return Err(format!("{}:{}:{}: Invalid input: letter or underscore following a number", self.file_path, self.current_line, self.current_column));
+                    } else {
+                        break;
+                    }
+                }
+
+                let to = self.position;
+
+                self.advance();
+
+                // FIXME: There must be a better way to do this
+                Number(self.input[from..=to].to_owned().parse().unwrap())
+            }
+
+            // TODO: Read all invalid characters in a row and return only one error for such cases
+            invalid => {
+                self.advance();
+                return Err(format!("{}:{}:{}: Invalid character: `{}`", self.file_path, self.current_line, self.current_column, invalid));
+            }
+        }; // end `let token = match`
+
+        Ok(self.make_spanned(token))
     }
 }
