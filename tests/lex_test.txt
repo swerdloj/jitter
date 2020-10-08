@@ -8,11 +8,11 @@ _1test
 test1_
 
 // keywords
+let
+mut
 fn
 for
 struct
-let
-mut
 
 // symbols
 - + * / = < > , : ; ( ) { } [ ]

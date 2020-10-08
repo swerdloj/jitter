@@ -30,7 +30,7 @@ pub enum Token<'input> {
     Colon,              // ':'
     Semicolon,          // ';'
 
-    Whitespace,         // '\r', '\n', ' ', .. 
+    Whitespace,         // '\r', '\n', '\t', ' ', .. 
 
     OpenParen,          // '('
     CloseParen,         // ')'
@@ -261,7 +261,7 @@ impl<'input> Lexer<'input> {
             '/' => {
                 self.advance();
                 if self.current() == '/' {
-                    while self.current() != '\n' {
+                    while self.position < self.bytes.len() && self.current() != '\n' {
                         self.advance();
                     }
                     // don't advance here to re-use whitespace logic

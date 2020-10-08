@@ -1,7 +1,12 @@
 pub mod ast;
 
 use ast::Node;
+use crate::Span;
 use crate::lex::{Token, SpannedToken, Keyword};
+
+// TODO: Return Results from everything.
+// TODO: Handle errors by simply return the expected node, but poisoned.
+//       Then, print all errors before exiting.
 
 // TODO: Replace this macro with a printed error message, then return the expected
 // token as a poisoned Node to allow the parser to continue.
@@ -9,8 +14,6 @@ use crate::lex::{Token, SpannedToken, Keyword};
 /// Print error and its location, then exit without panic
 macro_rules! parser_error {
     ( $path:expr, $span:expr, $($item:expr),+) => {
-        // TODO: Print span with file name, etc. as well as error message
-
         eprintln!(
             "Parsing Error at {}:{}:{}:\n\n{}\n",
             $path, $span.start_line, $span.start_column,
@@ -21,27 +24,25 @@ macro_rules! parser_error {
     };
 }
 
-// TEMP:
-const span: crate::Span = crate::Span {
-    start_line: 0,
-    start_column: 0,
-    end_line: 0,
-    end_column: 0,
-};
-
 pub struct Parser<'a> {
     file_path: &'a str,
     tokens: Vec<SpannedToken<'a>>,
-    // RefCell allows for referencing current/next while also advancing the position
+    // Interior mutability allows nesting method calls without worrying about `self` usage
     position: std::cell::RefCell<usize>,
 }
 
-// NOTE: Parse functions expect to parse the desired token.
+// NOTE: Some functions expect to parse only the desired token.
 //       This means that their first indicating token was already seen.
 //
 //       For example, `parse_function_definition` will not check whether the
 //       current token is the `fn` keyword. Instead, it will simply parse
 //       the remainder of the item.
+//       
+//       This is why spans begin with the `previous_span`.
+//       Similarly, because each parsed item advances the current position,
+//       the final span is extended by `previous_span` because current
+//       refers to the current token needing evaluation (rather than the most recently
+//       parsed token)
 impl<'a> Parser<'a> {
     pub fn new(file_path: &'a str, tokens: Vec<SpannedToken<'a>>) -> Self {
         Self {
@@ -51,7 +52,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn current_span(&self) -> &crate::Span {
+    // NOTE: This is used to determine certain item spans *after* parsing,
+    //       hence the looking back
+    fn previous_span(&self) -> &Span {
+        &self.tokens[*self.position.borrow()-1].span
+    }
+
+    fn current_span(&self) -> &Span {
         &self.tokens[*self.position.borrow()].span
     }
 
@@ -67,18 +74,21 @@ impl<'a> Parser<'a> {
         *self.position.borrow_mut() += 1;
     }
 
+    ///////////// Parse Functions /////////////
+
     #[allow(non_snake_case)]
     pub fn parse_AST(&self) -> ast::AST {
         let mut ast = Vec::new();
 
         while *self.position.borrow() < self.tokens.len() {
-            ast.push(self.parse_top_level())
+            ast.push(self.parse_top_level());
         }
 
         ast
     }
 
-    pub fn parse_top_level(&self) -> Node<ast::TopLevel> {
+    // TopLevel items are all nodes by themselves
+    pub fn parse_top_level(&self) -> ast::TopLevel {
         let item;
 
         match self.current_token() {
@@ -112,12 +122,15 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Node::new(item, span)
+        item
     }
 
     // TODO: Do I want tuple structs and/or unit structs?
     // struct ident {field1: type1, ..}
     pub fn parse_struct_definition(&self) -> Node<ast::Struct> {
+        // span of `struct` keyword
+        let start = self.previous_span();
+
         if let Token::Ident(name) = self.current_token() {
             self.advance();
             if let Token::OpenCurlyBrace = self.current_token() {
@@ -128,7 +141,7 @@ impl<'a> Parser<'a> {
                     fields,
                 };
 
-                Node::new(item, span)
+                Node::new(item, start.extend(*self.previous_span()))
             } else {
                 parser_error!(self.file_path, self.current_span(), "Expected `{{` after struct name. Found `{}`", self.current_token());
             }
@@ -137,10 +150,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_struct_fields(&self) -> Vec<Node<ast::StructField>> {
+    pub fn parse_struct_fields(&self) -> Node<ast::StructFieldList> {
         let mut fields = Vec::new();
+        // span of `{` token
+        let start = self.previous_span();
         
         loop {
+            let span = self.current_span();
+
             // Allows one comma after the final field
             if let Token::Comma = self.current_token() {
                 parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed after struct fields");
@@ -157,7 +174,7 @@ impl<'a> Parser<'a> {
                             field_type,
                         };
                         fields.push(
-                            Node::new(field, span)
+                            Node::new(field, span.extend(*self.previous_span()))
                         );
                     } else {
                         parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
@@ -181,11 +198,14 @@ impl<'a> Parser<'a> {
             parser_error!(self.file_path, self.current_span(), "Expected `}}` to end struct declaration. Found `{}`", self.current_token());
         }
 
-        fields
+        Node::new(fields, start.extend(*self.previous_span()))
     }
 
     // fn ident(param: type, ..) -> return_type { statements }
     pub fn parse_function_definition(&self) -> Node<ast::Function> {
+        // span of `fn` keyword
+        let start = self.previous_span();
+
         if let Token::Ident(name) = self.current_token() {
             self.advance();
 
@@ -229,17 +249,21 @@ impl<'a> Parser<'a> {
                 statements,
             };
 
-            Node::new(function, span)
+            Node::new(function, start.extend(*self.previous_span()))
         } else {
             parser_error!(self.file_path, self.current_span(), "Expected identifier, found `{}` while parsing function definition", self.current_token());
         }
     }
 
     // (ident: type, ident: type, ..)
-    pub fn parse_function_parameters(&self) -> Vec<Node<ast::FunctionParameter>> {
+    pub fn parse_function_parameters(&self) -> Node<ast::FunctionParameterList> {
         let mut parameters = Vec::new();
+        // span of `(` token
+        let start = self.previous_span();
         
         loop {
+            let span = self.current_span();
+
             let mut mutable = false;
 
             // Allows one comma after the final field
@@ -263,7 +287,7 @@ impl<'a> Parser<'a> {
                             field_name,
                             field_type,
                         };
-                        parameters.push(Node::new(param, span));
+                        parameters.push(Node::new(param, span.extend(*self.previous_span())));
                     } else {
                         parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
                     }
@@ -286,11 +310,13 @@ impl<'a> Parser<'a> {
             parser_error!(self.file_path, self.current_span(), "Expected `)` to end function parameter list. Found `{}`", self.current_token());
         }
 
-        parameters
+        Node::new(parameters, start.extend(*self.previous_span()))
     }
 
-    pub fn parse_statement_block(&self) -> Vec<Node<ast::Statement>> {
+    pub fn parse_statement_block(&self) -> Node<ast::StatementBlock> {
         let mut statements = Vec::new();
+        // span of `{` token
+        let start = self.previous_span();
 
         loop {
             if let Token::CloseCurlyBrace = self.current_token() {
@@ -302,7 +328,7 @@ impl<'a> Parser<'a> {
             statements.push(self.parse_statement());
         }
         
-        statements
+        Node::new(statements, start.extend(*self.previous_span()))
     }
 
     pub fn parse_statement(&self) -> Node<ast::Statement> {
@@ -316,6 +342,8 @@ impl<'a> Parser<'a> {
         };
 
         let statement;
+        // span of first statement element (`let` keyword, expression, etc.)
+        let start = self.current_span();
 
         match self.current_token() {
             // let mut ident: type = expr;
@@ -379,7 +407,7 @@ impl<'a> Parser<'a> {
                     | Token::Minus 
                     | Token::Asterisk
                     | Token::Slash => {
-                        let operator = self.current();
+                        let op_token = self.current();
 
                         // Special case (advance past the op in an op-assign)
                         if !(Token::Equals == *self.current_token()) {
@@ -387,9 +415,11 @@ impl<'a> Parser<'a> {
                         }
                         if let Token::Equals = *self.current_token() {
                             self.advance();
+                            let op = ast::AssignmentOp::from_token(op_token);
+
                             statement = ast::Statement::Assign {
                                 variable: ident,
-                                operator: ast::AssignmentOp::from_spanned_token(operator),
+                                operator: Node::new(op, op_token.span.extend(*self.previous_span())),
                                 expression: self.parse_expression(),
                             };
 
@@ -416,7 +446,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Node::new(statement, span)
+        Node::new(statement, start.extend(*self.previous_span()))
     }
 
     //////////////// ONLY EXPRESSIONS BELOW THIS LINE ////////////////
@@ -430,6 +460,8 @@ impl<'a> Parser<'a> {
     // Precedence for [+, -]
     fn parse_expression_additive(&self) -> Node<ast::Expression> {
         let mut expression = self.parse_expression_multiplicative();
+        // Span begins with the previous expression
+        let start = expression.span.clone();
 
         // loop => associative
         // Note that the expression is built up with each iteration
@@ -437,15 +469,17 @@ impl<'a> Parser<'a> {
             match self.current_token() {
                 Token::Plus | Token::Minus => {
                     let op_token = self.current();
+                    let op = ast::BinaryOp::from_token(op_token);
                     self.advance();
+
 
                     let rhs = self.parse_expression_multiplicative();
                     let expr = ast::Expression::BinaryExpression {
                         lhs: Box::new(expression),
-                        op: ast::BinaryOp::from_spanned_token(op_token),
+                        op: Node::new(op, op_token.span),
                         rhs: Box::new(rhs),
                     };
-                    expression = Node::new(expr, span);
+                    expression = Node::new(expr, start.extend(*self.previous_span()));
                 }
 
                 _ => break,
@@ -458,20 +492,23 @@ impl<'a> Parser<'a> {
     // Precedence for [*, /]
     fn parse_expression_multiplicative(&self) -> Node<ast::Expression> {
         let mut expression = self.parse_expression_base();
+        // Span begins with the previous expression
+        let start = expression.span.clone();
 
         loop {
             match self.current_token() {
                 Token::Asterisk | Token::Slash => {
                     let op_token = self.current();
+                    let op = ast::BinaryOp::from_token(op_token);
                     self.advance();
 
                     let rhs = self.parse_expression_base();
                     let expr = ast::Expression::BinaryExpression {
                         lhs: Box::new(expression),
-                        op: ast::BinaryOp::from_spanned_token(op_token),
+                        op: Node::new(op, op_token.span),
                         rhs: Box::new(rhs),
                     };
-                    expression = Node::new(expr, span);
+                    expression = Node::new(expr, start.extend(*self.previous_span()));
                 }
 
                 _ => break,
@@ -484,6 +521,8 @@ impl<'a> Parser<'a> {
     // Precedence for [parentheticals, literals, identifiers]
     fn parse_expression_base(&self) -> Node<ast::Expression> {
         let expression;
+        // This is a terminal item, so span contains the element about to be parsed
+        let start = self.current_span();
 
         // Base cases
         match self.current_token() {
@@ -517,6 +556,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Node::new(expression, span)
+        Node::new(expression, start.extend(*self.previous_span()))
     }
 }

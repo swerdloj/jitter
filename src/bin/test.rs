@@ -6,7 +6,7 @@ fn main() {
     let input = &std::fs::read_to_string(path).unwrap();
 
     let tokens = Lexer::lex_str(path, input, true);
-    println!("Tokens:\n{:#?}", tokens);
+    // println!("Tokens:\n{:#?}", tokens);
 
     let parser = Parser::new(path, tokens);
     let ast = parser.parse_AST();

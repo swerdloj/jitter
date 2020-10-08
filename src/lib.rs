@@ -5,7 +5,6 @@ pub mod parse;
 pub struct Span {
     pub start_line: usize,
     pub start_column: usize,
-    // TODO: This
     pub end_line: usize,
     pub end_column: usize,
 }
@@ -15,19 +14,14 @@ impl Span {
         Self {
             start_line, 
             start_column,
-            // TODO: This
-            end_line: 0,
-            end_column: 0,
+            end_line,
+            end_column,
         }
     }
 
-    pub fn merge(&mut self, other: Span) {
-        // this span begins before other
-        if (self.start_line < other.start_line) && (self.start_column < other.start_column) {
-            
-        } else { // other span starts before this
-            self.start_line = other.start_line;
-            self.start_column = other.start_column;
-        }
+    pub fn extend(mut self, other: Span) -> Span {
+        self.end_line = other.end_line;
+        self.end_column = other.end_column;
+        self
     }
 }

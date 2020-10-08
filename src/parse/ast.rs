@@ -46,9 +46,9 @@ use crate::lex::{SpannedToken, Token};
 
 #[derive(Debug)]
 pub struct Node<NodeType> {
-    item: NodeType,
-    span: crate::Span,
-    is_error_recovery_node: bool,
+    pub item: NodeType,
+    pub span: crate::Span,
+    pub is_error_recovery_node: bool,
 }
 
 impl<T> Node<T> {
@@ -69,7 +69,7 @@ impl<T> Node<T> {
 ///////////////// AST VARIANTS /////////////////
 
 
-pub type AST<'input> = Vec<Node<TopLevel<'input>>>;
+pub type AST<'input> = Vec<TopLevel<'input>>;
 
 #[derive(Debug)]
 pub enum TopLevel<'input> {
@@ -82,16 +82,18 @@ pub enum TopLevel<'input> {
 #[derive(Debug)]
 pub struct Function<'input> {
     pub name: &'input str,
-    pub parameters: Vec<Node<FunctionParameter<'input>>>,
+    pub parameters: Node<FunctionParameterList<'input>>,
     pub return_type: Option<&'input str>,
-    pub statements: Vec<Node<Statement<'input>>>,
+    pub statements: Node<StatementBlock<'input>>,
 }
 
 #[derive(Debug)]
 pub struct Struct<'input> {
     pub name: &'input str,
-    pub fields: Vec<Node<StructField<'input>>>,
+    pub fields: Node<StructFieldList<'input>>,
 }
+
+pub type StructFieldList<'input> = Vec<Node<StructField<'input>>>;
 
 #[derive(Debug)]
 pub struct StructField<'input> {
@@ -99,12 +101,17 @@ pub struct StructField<'input> {
     pub field_type: &'input str,
 }
 
+pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;
+
 #[derive(Debug)]
 pub struct FunctionParameter<'input> {
     pub mutable: bool,
     pub field_name: &'input str,
     pub field_type: &'input str,
 }
+
+
+pub type StatementBlock<'input> = Vec<Node<Statement<'input>>>;
 
 #[derive(Debug)]
 pub enum Statement<'input> {
@@ -162,17 +169,15 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    pub fn from_spanned_token(symbol_token: &SpannedToken) -> Node<Self> {
-        let op = match symbol_token.token {
+    pub fn from_token(symbol_token: &SpannedToken) -> Self {
+        match symbol_token.token {
             Token::Plus => BinaryOp::Add,
             Token::Minus => BinaryOp::Subtract,
             Token::Asterisk => BinaryOp::Multiply,
             Token::Slash => BinaryOp::Divide,
 
             _ => panic!("Cannot create BinaryOp from {:?}", symbol_token),
-        };
-
-        Node::new(op, symbol_token.span)
+        }
     }
 }
 
@@ -186,8 +191,8 @@ pub enum AssignmentOp {
 }
 
 impl AssignmentOp {
-    pub fn from_spanned_token(op_token: &SpannedToken) -> Node<Self> {
-        let op = match op_token.token {
+    pub fn from_token(op_token: &SpannedToken) -> Self {
+        match op_token.token {
             Token::Equals => AssignmentOp::Assign,
             Token::Plus => AssignmentOp::AddAssign,
             Token::Minus => AssignmentOp::SubtractAssign,
@@ -195,8 +200,6 @@ impl AssignmentOp {
             Token::Slash => AssignmentOp::DivideAssign,
 
             _ => panic!("Cannot create AssignmentOp from {:?}", op_token),
-        };
-
-        Node::new(op, op_token.span)
+        }
     }
 }
