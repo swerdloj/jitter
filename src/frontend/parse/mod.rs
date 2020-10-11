@@ -1,8 +1,9 @@
 pub mod ast;
+pub(self) use super::lex; // for convenience
 
-use ast::Node;
 use crate::Span;
-use crate::lex::{Token, SpannedToken, Keyword};
+use ast::Node;
+use lex::{Token, SpannedToken, Keyword};
 
 // TODO: Return Results from everything.
 // TODO: Handle errors by simply return the expected node, but poisoned.
@@ -13,7 +14,7 @@ use crate::lex::{Token, SpannedToken, Keyword};
 
 /// Print error and its location, then exit without panic
 macro_rules! parser_error {
-    ( $path:expr, $span:expr, $($item:expr),+) => {
+    ( $path:expr, $span:expr, $($item:expr),+ ) => {
         eprintln!(
             "Parsing Error at {}:{}:{}:\n\n{}\n",
             $path, $span.start_line, $span.start_column,

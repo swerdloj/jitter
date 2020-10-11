@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use parse_test::{
-        lex::*,
-        parse::*,
+        frontend::lex::*,
+        frontend::parse::*,
         Span,
     };
 

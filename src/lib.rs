@@ -1,5 +1,5 @@
-pub mod lex;
-pub mod parse;
+pub mod frontend;
+pub mod backend;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Span {

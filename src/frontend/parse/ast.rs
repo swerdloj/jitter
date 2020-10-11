@@ -1,53 +1,10 @@
-use crate::lex::{SpannedToken, Token};
-
-// TODO: Use a struct to add this data. That way, all child nodes will still be
-// forced to be of correct types (not just nodes).
-// macro_rules! make_ast_node {
-//     ( $($t:ident $(, $l:lifetime)?);+ $(;)?) => {
-//         // Create variants for the AST variant
-//         #[derive(Debug)]
-//         pub enum NodeData<'input> {
-//             $(
-//                 $t($t$(<$l>)?),
-//             )+
-//         }
-
-//         // Impl Into for the AST variant
-//         $(
-//             impl<'input> Into<NodeData<'input>> for $t$(<$l>)? {
-//                 fn into(self) -> NodeData<'input> {
-//                     NodeData::$t(self)
-//                 }
-//             }
-//         )+
-//     };
-// }
-
-// make_ast_node! {
-//     TopLevel, 'input;
-//     Function, 'input;
-//     Struct, 'input;
-//     StructField, 'input;
-//     FunctionParameter, 'input;
-//     Statement, 'input;
-//     Expression, 'input;
-//     Literal;
-//     UnaryOp;
-//     BinaryOp;
-//     AssignmentOp;
-// }
-
-// #[derive(Debug)]
-// pub struct Node<'input> {
-//     data: NodeData<'input>,
-//     span: crate::Span,
-//     is_error_recovery_node: bool,
-// }
+use super::lex::{SpannedToken, Token};
 
 #[derive(Debug)]
 pub struct Node<NodeType> {
     pub item: NodeType,
     pub span: crate::Span,
+    // TODO: This flag might not be needed (just knowing at least one error exists is enough)
     pub is_error_recovery_node: bool,
 }
 

@@ -1,5 +1,7 @@
-use parse_test::lex::Lexer;
-use parse_test::parse::Parser;
+use parse_test::frontend::{
+    lex::Lexer, 
+    parse::Parser
+};
 
 fn main() {
     let path = "./tests/test.lang";
