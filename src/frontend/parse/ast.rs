@@ -40,7 +40,7 @@ pub enum TopLevel<'input> {
 pub struct Function<'input> {
     pub name: &'input str,
     pub parameters: Node<FunctionParameterList<'input>>,
-    pub return_type: Option<&'input str>,
+    pub return_type: &'input str,
     pub statements: Node<StatementBlock<'input>>,
 }
 

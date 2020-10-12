@@ -29,7 +29,7 @@ mod tests {
         let tokens = Lexer::lex_str(path, input, true);
 
         let parser = Parser::new(path, tokens);
-        parser.parse_AST();
+        parser.parse_ast();
     }
 
    #[test]

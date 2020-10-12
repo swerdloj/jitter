@@ -1,3 +1,8 @@
+// NOTE: This file serves as a parsing test.
+// While the code here is technically valid, types are invalid placeholders.
+// Everything below simply reflects the grammar of the language--not functionality:
+// i.e. parsing this file should always produce a valid AST (but not usable)
+
 // struct with fields
 struct Test {
     field1: type1,

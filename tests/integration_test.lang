@@ -1,0 +1,7 @@
+// NOTE: This file serves as continuous feature-integration test
+// As new functionality is added to the compiler, this file
+// will grow to test that functionality.
+
+fn multiply(a: i32, b: i32) -> i32 {
+    return a * b;
+}

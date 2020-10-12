@@ -19,6 +19,7 @@ impl Span {
         }
     }
 
+    /// Extends the span to start at `self` and end at `other`
     pub fn extend(mut self, other: Span) -> Span {
         self.end_line = other.end_line;
         self.end_column = other.end_column;

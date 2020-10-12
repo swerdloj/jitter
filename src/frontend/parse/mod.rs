@@ -54,7 +54,8 @@ impl<'a> Parser<'a> {
     }
 
     // NOTE: This is used to determine certain item spans *after* parsing,
-    //       hence the looking back
+    //       hence the looking back. This removes the need to save temp spans without
+    //       knowing whether or not they will be needed
     fn previous_span(&self) -> &Span {
         &self.tokens[*self.position.borrow()-1].span
     }
@@ -75,13 +76,17 @@ impl<'a> Parser<'a> {
         *self.position.borrow_mut() += 1;
     }
 
+    // Returns true if there are any unparsed tokens
+    fn is_anything_unparsed(&self) -> bool {
+        *self.position.borrow() < self.tokens.len()
+    }
+
     ///////////// Parse Functions /////////////
 
-    #[allow(non_snake_case)]
-    pub fn parse_AST(&self) -> ast::AST {
+    pub fn parse_ast(&self) -> ast::AST {
         let mut ast = Vec::new();
 
-        while *self.position.borrow() < self.tokens.len() {
+        while self.is_anything_unparsed() {
             ast.push(self.parse_top_level());
         }
 
@@ -217,6 +222,7 @@ impl<'a> Parser<'a> {
                 panic!("Expected `(` after function name. Found `{}`", self.current_token());
             };
 
+            // `()` type is same as Rust's
             let return_type = if let Token::Minus = self.current_token() {
                 self.advance();
 
@@ -225,7 +231,7 @@ impl<'a> Parser<'a> {
 
                     if let Token::Ident(return_type) = self.current_token() {
                         self.advance();
-                        Some(*return_type)
+                        *return_type
                     } else {
                         parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current_token());
                     }
@@ -233,7 +239,7 @@ impl<'a> Parser<'a> {
                     parser_error!(self.file_path, self.current_span(), "Expected `->`. Found `{}`", self.current_token());
                 }
             } else {
-                None
+                "()"
             };
 
             let statements = if let Token::OpenCurlyBrace = self.current_token() {
