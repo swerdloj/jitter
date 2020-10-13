@@ -8,6 +8,7 @@ pub enum Keyword {
     Fn,
     For,
     Struct,
+    Return,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
@@ -54,6 +55,7 @@ impl<'input> std::fmt::Display for Token<'input> {
                     Keyword::Fn => "fn",
                     Keyword::For => "for",
                     Keyword::Struct => "struct",
+                    Keyword::Return => "return",
                 };
                 format!("keyword: {}", word)
             },
@@ -377,6 +379,29 @@ impl<'input> Lexer<'input> {
                                 if !self.is_next_alphanumeric()? {
                                     self.advance();
                                     token = Some(Token::Keyword(self::Keyword::Mut));
+                                }
+                            }
+                        }
+                    }
+
+                    // return
+                    'r' => {
+                        if self.is_next('e')? {
+                            self.advance();
+                            if self.is_next('t')? {
+                                self.advance();
+                                if self.is_next('u')? {
+                                    self.advance();
+                                    if self.is_next('r')? {
+                                        self.advance();
+                                        if self.is_next('n')? {
+                                            self.advance();
+                                            if !self.is_next_alphanumeric()? {
+                                                self.advance();
+                                                token = Some(Token::Keyword(self::Keyword::Return));
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

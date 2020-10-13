@@ -12,6 +12,8 @@ use lex::{Token, SpannedToken, Keyword};
 // TODO: Replace this macro with a printed error message, then return the expected
 // token as a poisoned Node to allow the parser to continue.
 
+// TODO: Print the context of the error with the span underlined (like rustc does)
+
 /// Print error and its location, then exit without panic
 macro_rules! parser_error {
     ( $path:expr, $span:expr, $($item:expr),+ ) => {
@@ -339,15 +341,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_statement(&self) -> Node<ast::Statement> {
-        // expects semicolon in a reusable code bit
-        let expect_semicolon = || {
-            if let Token::Semicolon = self.current_token() {
-                self.advance();
-            } else {
-                parser_error!(self.file_path, self.current_span(), "Expected `;` to terminate a statement. Found `{}`", self.current_token());
-            }
-        };
-
         let statement;
         // span of first statement element (`let` keyword, expression, etc.)
         let start = self.current_span();
@@ -394,13 +387,26 @@ impl<'a> Parser<'a> {
                     parser_error!(self.file_path, self.current_span(), "Expected identifier after `let`. Found `{}`", self.current_token());
                 }
                 
-                expect_semicolon();
-
                 statement = ast::Statement::Let {
                     ident,
                     mutable,
                     type_,
                     value: expression,
+                };
+            }
+
+            // return optional_expr;
+            Token::Keyword(Keyword::Return) => {
+                self.advance();
+                let expression = if let Token::Semicolon = self.current_token() {
+                    // there is no expression -> return value is `()`
+                    Node::new(ast::Expression::Literal(ast::Literal::UnitType), *self.previous_span())
+                } else {
+                    self.parse_expression()
+                };
+
+                statement = ast::Statement::Return {
+                    expression,
                 };
             }
 
@@ -429,13 +435,12 @@ impl<'a> Parser<'a> {
                                 operator: Node::new(op, op_token.span.extend(*self.previous_span())),
                                 expression: self.parse_expression(),
                             };
-
-                            expect_semicolon();
                         } else {
                             parser_error!(self.file_path, self.current_span(), "Expected `=` to create an op-assign statement. Found `{}`", self.current_token());
                         }
                     }
 
+                    // TODO: This should probably be removed eventually
                     // x;
                     Token::Semicolon => {
                         parser_error!(self.file_path, self.current_span(), "Identifier as statement does nothing");
@@ -447,10 +452,18 @@ impl<'a> Parser<'a> {
                 }
             }
 
+            // Must be an expression
             _ => {
-                // TODO: Could it be an expression?
-                parser_error!(self.file_path, self.current_span(), "Expected a statement. Found `{}`", self.current_token());
+                let expression = self.parse_expression();
+                statement = ast::Statement::Expression(expression);
             }
+        }
+
+        // expects semicolon
+        if let Token::Semicolon = self.current_token() {
+            self.advance();
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected `;` to terminate a statement. Found `{}`", self.current_token());
         }
 
         Node::new(statement, start.extend(*self.previous_span()))

@@ -14,9 +14,17 @@ fn main() {
 
     let parser = Parser::new(path, tokens);
     let ast = parser.parse_ast();
-    println!("AST:\n{:#?}", ast);
+    // println!("AST:\n{:#?}", ast);
 
 
     let mut jit = JITContext::new();
-    let todo = jit.translate(ast);
+    let todo = jit.translate(ast).unwrap();
+
+    unsafe {
+        let todo: fn(i32, i32) -> i32 = std::mem::transmute(jit.get_fn("multiply"));
+        println!("Call: {}", todo(1, 2));
+    }
+
+    // TODO: 
+    // let env = Environment::new(jit);
 }

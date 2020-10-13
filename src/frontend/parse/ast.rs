@@ -85,6 +85,10 @@ pub enum Statement<'input> {
         expression: Node<Expression<'input>>,
     },
 
+    Return {
+        expression: Node<Expression<'input>>,
+    },
+
     Expression(Node<Expression<'input>>),
 }
 
@@ -110,6 +114,7 @@ pub enum Expression<'input> {
 #[derive(Debug)]
 pub enum Literal {
     Number(usize),
+    UnitType, // `()` type
 }
 
 #[derive(Debug)]

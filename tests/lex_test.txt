@@ -13,6 +13,7 @@ mut
 fn
 for
 struct
+return
 
 // symbols
 - + * / = < > , : ; ( ) { } [ ]

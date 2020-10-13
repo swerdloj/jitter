@@ -3,5 +3,12 @@
 // will grow to test that functionality.
 
 fn multiply(a: i32, b: i32) -> i32 {
+    let result = a * b;
+
+    // TODO: Implement return values
     return a * b;
 }
+
+// fn second_fn() {
+//     let x = 12;
+// }
