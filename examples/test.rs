@@ -20,11 +20,32 @@ fn main() {
     let mut jit = JITContext::new();
     let todo = jit.translate(ast).unwrap();
 
+    // TEMP: for testing
     unsafe {
         let todo: fn(i32, i32) -> i32 = std::mem::transmute(jit.get_fn("multiply"));
         println!("Call: {}", todo(1, 2));
     }
 
-    // TODO: 
+    // TODO: growable environment (REPL-style)
     // let env = Environment::new(jit);
 }
+
+/*
+
+TODO:
+
+#[lang(link)]
+extern "lang" { 
+    fn multiply(i32, i32) -> i32; 
+}
+
+would generate the following:
+
+fn multiply(a: i32, b: i32) -> i32 {
+    let func: fn(i32, i32) -> i32 = 
+        std::mem::transmute(static_jit_context.get("multiply"));
+
+    func(a, b)
+}
+
+*/
