@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use parse_test::{
+    use jitter::{
         frontend::lex::*,
         frontend::parse::*,
         Span,
@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn parser() {
-        let path = "./tests/test.lang";
+        let path = "./tests/test.jitter";
         let input = &std::fs::read_to_string(path).unwrap();
 
         let tokens = Lexer::lex_str(path, input, true);
@@ -67,6 +67,7 @@ mod tests {
             Token::Comma,
             Token::Colon,
             Token::Semicolon,
+            Token::Bang,
             Token::OpenParen,
             Token::CloseParen,
             Token::OpenCurlyBrace,

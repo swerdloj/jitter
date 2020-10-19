@@ -511,7 +511,7 @@ impl<'a> Parser<'a> {
 
     // Precedence for [*, /]
     fn parse_expression_multiplicative(&self) -> Node<ast::Expression> {
-        let mut expression = self.parse_expression_base();
+        let mut expression = self.parse_expression_unary();
         // Span begins with the previous expression
         let start = expression.span.clone();
 
@@ -522,7 +522,7 @@ impl<'a> Parser<'a> {
                     let op = ast::BinaryOp::from_token(op_token);
                     self.advance();
 
-                    let rhs = self.parse_expression_base();
+                    let rhs = self.parse_expression_unary();
                     let expr = ast::Expression::BinaryExpression {
                         lhs: Box::new(expression),
                         op: Node::new(op, op_token.span),
@@ -536,6 +536,37 @@ impl<'a> Parser<'a> {
         }
 
         expression
+    }
+
+    // Precedence for [negation, not]
+    fn parse_expression_unary(&self) -> Node<ast::Expression> {
+        let expression;
+        let start = self.current_span();
+
+        match self.current_token() {
+            Token::Minus => {
+                self.advance();
+                expression = ast::Expression::UnaryExpression {
+                    op: Node::new(ast::UnaryOp::Negate, *self.previous_span()),
+                    expr: Box::new(self.parse_expression()),
+                };
+            }
+
+            // TODO: Boolean logic
+            // Token::Bang => {
+            //     self.advance();
+            //     expression = ast::Expression::UnaryExpression {
+            //         op: Node::new(ast::UnaryOp::Not, *self.previous_span()),
+            //         expr: Box::new(self.parse_expression()),
+            //     };
+            // }
+
+            _ => {
+                return self.parse_expression_base();
+            }
+        }
+
+        Node::new(expression, start.extend(*self.previous_span()))
     }
 
     // Precedence for [parentheticals, literals, identifiers]

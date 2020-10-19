@@ -92,6 +92,7 @@ pub enum Statement<'input> {
     Expression(Node<Expression<'input>>),
 }
 
+// TODO: Store expression type. This is needed for analysis/codegen
 #[derive(Debug)]
 pub enum Expression<'input> {
     BinaryExpression {

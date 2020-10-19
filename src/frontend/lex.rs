@@ -31,6 +31,8 @@ pub enum Token<'input> {
     Colon,              // ':'
     Semicolon,          // ';'
 
+    Bang,               // '!'
+
     Whitespace,         // '\r', '\n', '\t', ' ', .. 
 
     OpenParen,          // '('
@@ -69,6 +71,7 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Comma => ",".to_owned(),
             Token::Colon => ":".to_owned(),
             Token::Semicolon => ";".to_owned(),
+            Token::Bang => "!".to_owned(),
             Token::Whitespace => panic!("TODO: Display whitespace?"),
             Token::OpenParen => "(".to_owned(),
             Token::CloseParen => ")".to_owned(),
@@ -291,6 +294,10 @@ impl<'input> Lexer<'input> {
             ';' => {
                 self.advance();
                 Semicolon
+            }
+            '!' => {
+                self.advance();
+                Bang
             }
             '(' => {
                 self.advance();

@@ -29,7 +29,6 @@ pub struct JITContext {
     functions: HashMap<String, cranelift_module::FuncId>,
 }
 
-// High-level functionality (lower-level functionality in second impl block)
 impl JITContext {
     pub fn new() -> Self {
         let builder = SimpleJITBuilder::new(cranelift_module::default_libcall_names());
@@ -81,7 +80,7 @@ impl JITContext {
     // TODO: How would structs, etc. work?
     fn generate_function(&mut self, function: &ast::Function) -> Result<(), String> {
         // TEMP: debug
-        println!("Generating `{}`\n", function.name);
+        crate::log!("Generating function `{}`:\n", function.name);
 
         // Define the function parameters
         for parameter in &function.parameters.item {
@@ -177,12 +176,8 @@ impl FunctionTranslator<'_> {
             self.translate_statement(&statement.item)?;
         }
         
-        // TODO: This should be associated with `Statement::Return`
-        // Specify and use the return variable (if the function returns anything)
-        if return_type != types::INVALID {
-            let return_value = self.fn_builder.use_var(return_var);
-            self.fn_builder.ins().return_(&[return_value]);
-        } else {
+        // Return nothing if function has no return type
+        if return_type == types::INVALID {
             self.fn_builder.ins().return_(&[]);
         }
         
@@ -190,7 +185,7 @@ impl FunctionTranslator<'_> {
         
         
         // TEMP: debug
-        print!("{}:\n{}\n", function.name, self.fn_builder.display(None));
+        crate::log!("{}", self.fn_builder.display(None));
         
         Ok(())
     }
@@ -215,11 +210,31 @@ impl FunctionTranslator<'_> {
             
             // Assign a value to a variable
             ast::Statement::Assign { variable, operator, expression } => {
-                todo!()
+                let expr_value = self.translate_expression(&expression.item)?;
+                let var = self.variables.get_var(variable)?;
+                
+                match operator.item {
+                    ast::AssignmentOp::Assign => {
+                        self.fn_builder.def_var(*var, expr_value);
+                    }
+                    ast::AssignmentOp::AddAssign => {
+                        todo!();
+                    }
+                    ast::AssignmentOp::SubtractAssign => {
+                        todo!();
+                    }
+                    ast::AssignmentOp::MultiplyAssign => {
+                        todo!();
+                    }
+                    ast::AssignmentOp::DivideAssign => {
+                        todo!();
+                    }
+                }
             }
             
             ast::Statement::Return { expression } => {
-                todo!()
+                let return_value = self.translate_expression(&expression.item)?;
+                self.fn_builder.ins().return_(&[return_value]);
             }
             
             ast::Statement::Expression(expr) => {
@@ -236,15 +251,27 @@ impl FunctionTranslator<'_> {
                 todo!()
             }
 
+            // TODO: Account for integer vs float
             ast::Expression::UnaryExpression { op, expr } => {
-                todo!()
+                match op.item {
+                    ast::UnaryOp::Negate => {
+                        let value = self.translate_expression(&expr.item)?;
+                        self.fn_builder.ins().ineg(value)
+                    }
+                }
             }
 
+            // FIXME: Is this correct? Do parentheses only matter during parsing?
             ast::Expression::Parenthesized(expr) => {
-                todo!()
+                self.translate_expression(&expr.item)?
             }
 
             ast::Expression::Literal(literal) => {
+                match literal {
+                    ast::Literal::Number(_) => {}
+                    ast::Literal::UnitType => {}
+                }
+
                 todo!()
             }
             

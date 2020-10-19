@@ -47,13 +47,13 @@ fn fn_name(mut param1: type1, param2: type2) -> return_type {
     variable1 = variable2;
 
     // associative expressions
-    variable1 = 1 + 2 + 3 - 1 - variable + 7;
+    variable1 = 1 + -2 + 3 - -1 - variable + 7;
     // operator precedence
     variable2 = 1 + 2 * 3 - 1 / variable + 7;
     // parenthesized expression
-    variable3 = (7 * 3);
+    variable3 = -(7 * 3);
     // combination
-    variable4 *= 3 - ((1 + variable) * 3) + 118;
+    variable4 *= 3 - (-(1 + variable) * 3) + 118;
 
     // expressions as statements
     1 * 7;

@@ -1,0 +1,25 @@
+// NOTE: This file serves as a continuous feature-integration test.
+// As new functionality is added to the compiler, this file
+// will grow to test that functionality.
+
+// fn multiply(a: i32, b: i32) -> i32 {
+//     let result: i32 = a * b;
+
+//     // TODO: Implement return values
+//     return a * b;
+// }
+
+fn negate(a: i32) -> i32 {
+    let x: i32 = -a;
+
+    return x;
+}
+
+fn identity(a: u32) -> u32 {
+    return a;
+}
+
+// TODO: Infer literal types
+// fn return_12_i32() -> i32 {
+//     return 12;
+// }
