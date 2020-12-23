@@ -9,8 +9,43 @@
 //     return a * b;
 // }
 
+// TODO: static, const, @ tags
+// TODO: Implement and test out hot-reloading
+// @persistent
+// static mut TEST: u32 = 0;
+
+struct Test {
+    a: u8,
+    b: u16,
+    c: u64,
+}
+
+// TODO: impls
+// impl Test {
+//     fn add_one(&mut self) {
+//         self.a += 1;
+//         self.b += 1;
+//         self.c += 1;
+//     }
+// }
+
+// TODO: structs
+// fn structs(a: Test) -> Test {
+//     let mut test = Test {
+//         a: 1,
+//         b: 2,
+//         c: 3,
+//     };
+
+//     test.b = 7;
+//     test.add_one();
+
+//     return test;
+// }
+
 fn negate(a: i32) -> i32 {
-    let x: i32 = -a;
+    // immediate type inferrence
+    let x = -a;
 
     return x;
 }
@@ -20,6 +55,6 @@ fn identity(a: u32) -> u32 {
 }
 
 // TODO: Infer literal types
-// fn return_12_i32() -> i32 {
+// fn return_12i32() -> i32 {
 //     return 12;
 // }

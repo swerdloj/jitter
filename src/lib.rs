@@ -38,11 +38,12 @@ pub fn create_local_context(path: &str) -> backend::codegen::JITContext {
 
     let parser = frontend::parse::Parser::new(path, tokens);
     let ast = parser.parse_ast();
-    log!("AST:\n{:#?}", ast);
+    // log!("AST:\n{:#?}", ast);
 
+    let validation_context = frontend::validate::validate_ast(ast).unwrap();
 
     let mut jit = backend::codegen::JITContext::new();
-    jit.translate(ast).unwrap();
+    jit.translate(validation_context).unwrap();
 
 
     // NOTE: Do not use `println` prior to this call if analyzing compile time. 
@@ -64,7 +65,7 @@ pub struct Span {
 
 impl std::fmt::Debug for Span {
     // FIXME: Make printing spans optional
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }

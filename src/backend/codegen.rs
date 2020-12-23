@@ -9,33 +9,40 @@ use crate::frontend::parse::ast;
 
 use cranelift::prelude::*;
 use cranelift_module::{Module, Linkage, DataContext};
-use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+use cranelift_simplejit::{SimpleJITBuilder, SimpleJITModule};
 
 use std::collections::HashMap;
 
 /// Contains all information needed to JIT compile and run the generated code
 pub struct JITContext {
-    type_map: super::types::TypeMap,
-
     // FIXME: How is `Context` related to functions?
     fn_builder_context: FunctionBuilderContext,
     fn_context: codegen::Context,
     
     data_context: DataContext,
 
-    module: Module<SimpleJITBackend>,
+    module: SimpleJITModule,
 
     // TEMP: for testing
     functions: HashMap<String, cranelift_module::FuncId>,
 }
 
 impl JITContext {
+    // TODO: Allow optimization settings to be passed in
+    // TODO: Accept/determine target ISA
+    // TODO: Declare functions (using validation context) first, then translate their bodies
     pub fn new() -> Self {
-        let builder = SimpleJITBuilder::new(cranelift_module::default_libcall_names());
-        let module = Module::new(builder);
+        let mut settings = settings::builder();
+        // can also do "speed_and_size"
+        settings.set("opt_level", "speed").expect("Optimization");
+        
+        let isa_builder = isa::lookup(target_lexicon::Triple::host()).expect("isa");
+        let isa = isa_builder.finish(settings::Flags::new(settings));
+
+        let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+        let module = SimpleJITModule::new(builder);
 
         Self {
-            type_map: super::types::TypeMap::new(),
             fn_builder_context: FunctionBuilderContext::new(),
             fn_context: module.make_context(),
             data_context: DataContext::new(),
@@ -52,20 +59,22 @@ impl JITContext {
         self.module.get_finalized_function(*func_id)
     }
 
-    // TODO: Utilize the validation context
-    pub fn translate(&mut self, ast: ast::AST) -> Result<(), String> {
-        for node in ast {
+    pub fn translate(&mut self, validation_context: crate::frontend::validate::context::Context) -> Result<(), String> {
+        for node in validation_context.ast {
             match node {
                 ast::TopLevel::Function(function) => {
                     self.generate_function(&function.item)?;
                 }
 
+                // Struct informs the compiler of raw data. There is nothing to translate (except impls).
                 ast::TopLevel::Struct(_) => {
-                    todo!()
+                    // Nothing to do here
                 }
+
                 ast::TopLevel::ConstDeclaration => {
                     todo!()
                 }
+
                 ast::TopLevel::UseStatement => {
                     todo!()
                 }
@@ -84,15 +93,15 @@ impl JITContext {
 
         // Define the function parameters
         for parameter in &function.parameters.item {
-            let param_type = self.type_map.get(parameter.item.field_type)?;
+            let param_type = parameter.item.field_type.ir_type();
             
             self.fn_context.func.signature.params.push(
-                AbiParam::new(*param_type)
+                AbiParam::new(param_type)
             );
         }
         
         // Set return variable
-        let return_type = *self.type_map.get(function.return_type)?;
+        let return_type = function.return_type.ir_type();
 
         if return_type != types::INVALID {
             self.fn_context.func.signature.returns.push(
@@ -102,14 +111,15 @@ impl JITContext {
         
         let mut function_translator = FunctionTranslator {
             fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
-            type_map: &mut self.type_map,
+            // type_map: &mut self.type_map,
             variables: super::VarMap::new(),
         };
         
         // Generates IR, then finalizes the function, making it ready for the module
         function_translator.translate_function(function, return_type)?;
+        // Performs constant folding (only optimization for now)
+        cranelift_preopt::optimize(&mut self.fn_context, self.module.isa()).expect("Optimize");
         
-
         // Initial declaration (C-style?)
         let id = self.module
             .declare_function(function.name, Linkage::Local, &self.fn_context.func.signature)
@@ -140,7 +150,6 @@ impl JITContext {
 // Translates a function and its contents into IR
 struct FunctionTranslator<'a> {
     fn_builder: FunctionBuilder<'a>,
-    type_map: &'a mut super::types::TypeMap,
     // Maps `Variable`s with names
     variables: super::VarMap,
 }
@@ -158,12 +167,12 @@ impl FunctionTranslator<'_> {
             
         // Declare the function's parameters (entry block params)
         for (index, param_node) in function.parameters.item.iter().enumerate() {            
-            let param_type = self.type_map.get(param_node.item.field_type)?;
+            let param_type = param_node.item.field_type.ir_type();
             
             let var = self.variables.create_var(param_node.item.field_name.to_owned());
             
             // Decalre the parameter and its type
-            self.fn_builder.declare_var(var, *param_type);
+            self.fn_builder.declare_var(var, param_type);
             // Define the parameter with the values passed when calling the function
             self.fn_builder.def_var(var, self.fn_builder.block_params(entry_block)[index]);
         }
@@ -183,7 +192,6 @@ impl FunctionTranslator<'_> {
         
         self.fn_builder.finalize();
         
-        
         // TEMP: debug
         crate::log!("{}", self.fn_builder.display(None));
         
@@ -195,11 +203,11 @@ impl FunctionTranslator<'_> {
         match statement {
             // TODO: Utilize knowledge of mutability
             // Create a new variable and assign it if an expression is given
-            ast::Statement::Let { ident, mutable, type_, value } => {
+            ast::Statement::Let { ident, mutable, ty, value } => {
                 let var = self.variables.create_var(ident.to_string());
                 self.fn_builder.declare_var(
-                    var, 
-                    *self.type_map.get(type_.expect("Type should be known by now"))?
+                    var,
+                    ty.ir_type()
                 );
                 
                 if let Some(value) = value {
@@ -247,28 +255,33 @@ impl FunctionTranslator<'_> {
     
     fn translate_expression(&mut self, expression: &ast::Expression) -> Result<Value, String> {
         let value = match expression {
-            ast::Expression::BinaryExpression { lhs, op, rhs } => {
+            ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
                 todo!()
             }
 
             // TODO: Account for integer vs float
-            ast::Expression::UnaryExpression { op, expr } => {
+            ast::Expression::UnaryExpression { op, expr, ty } => {
                 match op.item {
                     ast::UnaryOp::Negate => {
                         let value = self.translate_expression(&expr.item)?;
                         self.fn_builder.ins().ineg(value)
                     }
+
+                    ast::UnaryOp::Not => {
+                        todo!()
+                    }
                 }
             }
 
             // FIXME: Is this correct? Do parentheses only matter during parsing?
-            ast::Expression::Parenthesized(expr) => {
+            ast::Expression::Parenthesized { expr, .. } => {
                 self.translate_expression(&expr.item)?
             }
 
             ast::Expression::Literal(literal) => {
                 match literal {
-                    ast::Literal::Number(_) => {}
+                    ast::Literal::Integer(_) => {}
+                    ast::Literal::Float(_) => {}
                     ast::Literal::UnitType => {}
                 }
 

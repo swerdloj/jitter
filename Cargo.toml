@@ -11,6 +11,10 @@ benchmark = []
 
 [dependencies]
 proc-macros = { path = "proc-macros" }
-cranelift = "0.67.0"
-cranelift-module = "0.67.0"
-cranelift-simplejit = "0.67.0"
+
+target-lexicon = "0.11.1"
+
+cranelift           = "0.68.0"
+cranelift-module    = "0.68.0"
+cranelift-simplejit = "0.68.0"
+cranelift-preopt     = "0.68.0"

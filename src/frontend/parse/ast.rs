@@ -1,4 +1,6 @@
 use super::lex::{SpannedToken, Token};
+use crate::frontend::validate::types::Type;
+
 
 #[derive(Debug)]
 pub struct Node<NodeType> {
@@ -40,7 +42,7 @@ pub enum TopLevel<'input> {
 pub struct Function<'input> {
     pub name: &'input str,
     pub parameters: Node<FunctionParameterList<'input>>,
-    pub return_type: &'input str,
+    pub return_type: Type<'input>,
     pub statements: Node<StatementBlock<'input>>,
 }
 
@@ -55,7 +57,7 @@ pub type StructFieldList<'input> = Vec<Node<StructField<'input>>>;
 #[derive(Debug)]
 pub struct StructField<'input> {
     pub field_name: &'input str,
-    pub field_type: &'input str,
+    pub field_type: Type<'input>,
 }
 
 pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;
@@ -64,7 +66,7 @@ pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;
 pub struct FunctionParameter<'input> {
     pub mutable: bool,
     pub field_name: &'input str,
-    pub field_type: &'input str,
+    pub field_type: Type<'input>,
 }
 
 
@@ -75,7 +77,7 @@ pub enum Statement<'input> {
     Let {
         ident: &'input str,
         mutable: bool,
-        type_: Option<&'input str>,
+        ty: Type<'input>,
         value: Option<Node<Expression<'input>>>,
     },
 
@@ -92,35 +94,45 @@ pub enum Statement<'input> {
     Expression(Node<Expression<'input>>),
 }
 
-// TODO: Store expression type. This is needed for analysis/codegen
 #[derive(Debug)]
 pub enum Expression<'input> {
     BinaryExpression {
         lhs: Box<Node<Expression<'input>>>,
         op: Node<BinaryOp>,
         rhs: Box<Node<Expression<'input>>>,
+        ty: Type<'input>,
     },
 
     UnaryExpression {
         op: Node<UnaryOp>,
         expr: Box<Node<Expression<'input>>>,
+        ty: Type<'input>,
     },
 
-    Parenthesized(Box<Node<Expression<'input>>>),
+    Parenthesized {
+        expr: Box<Node<Expression<'input>>>,
+        ty: Type<'input>,
+    },
 
+    // TODO: Do these need type fields?
     Literal(Literal),
     Ident(&'input str),
 }
 
 #[derive(Debug)]
 pub enum Literal {
-    Number(usize),
-    UnitType, // `()` type
+    /// Integer of any type
+    Integer(usize),
+    /// Floating point number of any type
+    Float(f64),
+    /// `()` type
+    UnitType, 
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Negate,
+    Not,
 }
 
 #[derive(Debug)]

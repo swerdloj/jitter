@@ -3,6 +3,7 @@ mod tests {
     use jitter::{
         frontend::lex::*,
         frontend::parse::*,
+        frontend::validate::types::Type,
         Span,
     };
 
@@ -10,12 +11,13 @@ mod tests {
     fn nodes() {
         use ast::*;
 
-        let child = Expression::Literal(Literal::Number(7));
+        let child = Expression::Literal(Literal::Integer(7));
         let child_node = Node::new(child, Span::new(0, 0, 0, 0));
 
         let parent = Expression::UnaryExpression {
             op: Node::new(UnaryOp::Negate, Span::new(0, 0, 0, 0)),
             expr: Box::new(child_node),
+            ty: Type::Unknown,
         };
 
         let _parent_node = Node::new(parent, Span::new(0, 0, 0, 0));

@@ -4,6 +4,7 @@ pub(self) use super::lex; // for convenience
 use crate::Span;
 use ast::Node;
 use lex::{Token, SpannedToken, Keyword};
+use crate::frontend::validate::types::Type;
 
 // TODO: Return Results from everything.
 // TODO: Handle errors by simply return the expected node, but poisoned.
@@ -179,7 +180,7 @@ impl<'a> Parser<'a> {
                         self.advance();
                         let field = ast::StructField {
                             field_name,
-                            field_type,
+                            field_type: Type::resolve(field_type),
                         };
                         fields.push(
                             Node::new(field, span.extend(*self.previous_span()))
@@ -228,12 +229,14 @@ impl<'a> Parser<'a> {
             let return_type = if let Token::Minus = self.current_token() {
                 self.advance();
 
+                // found `->`
                 if let Token::RightAngleBracket = self.current_token() {
                     self.advance();
 
+                    // TODO: Allow tuples, arrays, etc.
                     if let Token::Ident(return_type) = self.current_token() {
                         self.advance();
-                        *return_type
+                        Type::resolve(*return_type)
                     } else {
                         parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current_token());
                     }
@@ -241,7 +244,8 @@ impl<'a> Parser<'a> {
                     parser_error!(self.file_path, self.current_span(), "Expected `->`. Found `{}`", self.current_token());
                 }
             } else {
-                "()"
+                // No return type -> unit type (void)
+                Type::Unit
             };
 
             let statements = if let Token::OpenCurlyBrace = self.current_token() {
@@ -294,7 +298,7 @@ impl<'a> Parser<'a> {
                         let param = ast::FunctionParameter {
                             mutable,
                             field_name,
-                            field_type,
+                            field_type: Type::resolve(field_type),
                         };
                         parameters.push(Node::new(param, span.extend(*self.previous_span())));
                     } else {
@@ -358,23 +362,23 @@ impl<'a> Parser<'a> {
                 };
 
                 let ident;
-                let type_;
+                let ty;
                 let expression;
 
                 if let Token::Ident(ident_) = self.current_token() {
                     self.advance();
                     ident = ident_;
 
-                    type_ = if let Token::Colon = self.current_token() {
+                    ty = if let Token::Colon = self.current_token() {
                         self.advance();
                         if let Token::Ident(type_) = self.current_token() {
                             self.advance();
-                            Some(*type_)
+                            Type::resolve(*type_)
                         } else {
                             parser_error!(self.file_path, self.current_span(), "Expected type after `:`. Found `{}`", self.current_token());
                         }
                     } else {
-                        None
+                        Type::Unknown
                     };
 
                     expression = if let Token::Equals = self.current_token() {
@@ -390,7 +394,7 @@ impl<'a> Parser<'a> {
                 statement = ast::Statement::Let {
                     ident,
                     mutable,
-                    type_,
+                    ty,
                     value: expression,
                 };
             }
@@ -498,6 +502,7 @@ impl<'a> Parser<'a> {
                         lhs: Box::new(expression),
                         op: Node::new(op, op_token.span),
                         rhs: Box::new(rhs),
+                        ty: Type::Unknown,
                     };
                     expression = Node::new(expr, start.extend(*self.previous_span()));
                 }
@@ -527,6 +532,7 @@ impl<'a> Parser<'a> {
                         lhs: Box::new(expression),
                         op: Node::new(op, op_token.span),
                         rhs: Box::new(rhs),
+                        ty: Type::Unknown,
                     };
                     expression = Node::new(expr, start.extend(*self.previous_span()));
                 }
@@ -549,17 +555,18 @@ impl<'a> Parser<'a> {
                 expression = ast::Expression::UnaryExpression {
                     op: Node::new(ast::UnaryOp::Negate, *self.previous_span()),
                     expr: Box::new(self.parse_expression()),
+                    ty: Type::Unknown,
                 };
             }
 
-            // TODO: Boolean logic
-            // Token::Bang => {
-            //     self.advance();
-            //     expression = ast::Expression::UnaryExpression {
-            //         op: Node::new(ast::UnaryOp::Not, *self.previous_span()),
-            //         expr: Box::new(self.parse_expression()),
-            //     };
-            // }
+            Token::Bang => {
+                self.advance();
+                expression = ast::Expression::UnaryExpression {
+                    op: Node::new(ast::UnaryOp::Not, *self.previous_span()),
+                    expr: Box::new(self.parse_expression()),
+                    ty: Type::Unknown,
+                };
+            }
 
             _ => {
                 return self.parse_expression_base();
@@ -580,9 +587,10 @@ impl<'a> Parser<'a> {
             // ( expression )
             Token::OpenParen => {
                 self.advance();
-                expression = ast::Expression::Parenthesized(
-                    Box::new(self.parse_expression())
-                );
+                expression = ast::Expression::Parenthesized {
+                    expr: Box::new(self.parse_expression()),
+                    ty: Type::Unknown,
+                };
                 if let Token::CloseParen = self.current_token() {
                     self.advance();
                 } else {
@@ -590,10 +598,11 @@ impl<'a> Parser<'a> {
                 }
             }
 
+            // TODO: Differentiate integers and floats
             // Numeric literal
             Token::Number(number) => {
                 self.advance();
-                expression = ast::Expression::Literal(ast::Literal::Number(*number));
+                expression = ast::Expression::Literal(ast::Literal::Integer(*number));
             }
 
             // Identifier

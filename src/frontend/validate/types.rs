@@ -1,5 +1,8 @@
 // TODO: Support arrays, type aliases, & traits
 
+use cranelift::codegen::ir::types as cranelift_types;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum Type<'input> {
     u8,
@@ -19,13 +22,20 @@ pub enum Type<'input> {
 
     bool,
 
+    /// `()` type
     Unit,
 
-    // Name of a struct
-    Struct(&'input str),
+    /// (A, B, C, ...)
+    Tuple(Vec<Type<'input>>),
+    
+    /// Name of a struct, enum, alias, etc.
+    User(&'input str),
+
+    /// Unspecified and uninferred type 
+    Unknown,
 }
 
-// impl<'input> Type<'input> {
+impl<'input> Type<'input> {
     /// Resolves a type (as text) obtained from lexer/parser to an internal type
     pub fn resolve(type_str: &str) -> Type {
         match type_str {
@@ -48,7 +58,41 @@ pub enum Type<'input> {
 
             "()" => Type::Unit,
 
-            _ => Type::Struct(type_str),
+            // TODO: Tuples? Arrays?
+            _ => Type::User(type_str),
         }
     }
-// }
+
+    pub fn is_unknown(&self) -> bool {
+        self == &Type::Unknown
+    }
+
+    pub fn ir_type(&self) -> cranelift_types::Type {
+        // NOTE: `I` is for `integer` -> sign is not regarded
+        match self {
+            Type::u8 => cranelift_types::I8,
+            Type::u16 => cranelift_types::I16,
+            Type::u32 => cranelift_types::I32,
+            Type::u64 => cranelift_types::I64,
+            Type::u128 => cranelift_types::I128,
+
+            Type::i8 => cranelift_types::I8,
+            Type::i16 => cranelift_types::I16,
+            Type::i32 => cranelift_types::I32,
+            Type::i64 => cranelift_types::I64,
+            Type::i128 => cranelift_types::I128,
+
+            Type::f32 => cranelift_types::F32,
+            Type::f64 => cranelift_types::F64,
+
+            Type::bool => cranelift_types::B1,
+
+            // TODO: What to do about these?
+            Type::Unit => cranelift_types::INVALID,
+            Type::Tuple(_) => cranelift_types::INVALID,
+            Type::Unknown => cranelift_types::INVALID,
+
+            Type::User(_) => cranelift_types::INVALID,
+        }
+    }
+}
