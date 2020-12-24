@@ -14,11 +14,21 @@
 // @persistent
 // static mut TEST: u32 = 0;
 
+// trait Trait {
+//     fn test() -> u8;
+// }
+
 struct Test {
     a: u8,
     b: u16,
     c: u64,
 }
+
+// impl Test {}
+
+// impl Trait for Test {
+//     fn test() -> u8 { 7 }
+// }
 
 // TODO: impls
 // impl Test {
@@ -47,11 +57,12 @@ fn negate(a: i32) -> i32 {
     // immediate type inferrence
     let x = -a;
 
-    return x;
+    // Implicit returns
+    x
 }
 
 fn identity(a: u32) -> u32 {
-    return a;
+    a
 }
 
 // TODO: Infer literal types

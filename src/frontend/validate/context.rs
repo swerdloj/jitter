@@ -164,6 +164,9 @@ pub struct Context<'input> {
 
     /// The validated AST
     pub ast: ast::AST<'input>,
+
+    /// Used to validate function bodies using `Statement::Return`s
+    last_return_type: Type<'input>,
 }
 
 impl<'a> Context<'a> {
@@ -176,6 +179,8 @@ impl<'a> Context<'a> {
             scopes: Scopes::new(),
             // Does not allocate any heap memory
             ast: ast::AST::with_capacity(0),
+
+            last_return_type: Type::Unknown,
         }
     }
 
@@ -184,14 +189,26 @@ impl<'a> Context<'a> {
         for node in &mut ast {
             match node {
                 ast::TopLevel::Function(function) => {
-                    self.register_function(&mut function.item)?;
+                    self.register_function(function)?;
                 }
+
+                ast::TopLevel::Trait(trait_) => {
+                    // self.register_trait(trait_)?;
+                    todo!()
+                }
+
+                ast::TopLevel::Impl(impl_) => {
+                    todo!()
+                }
+
                 ast::TopLevel::Struct(struct_) => {
-                    self.register_struct(&struct_.item)?;
+                    self.register_struct(&struct_)?;
                 }
+
                 ast::TopLevel::ConstDeclaration => {
                     todo!()
                 }
+
                 ast::TopLevel::UseStatement => {
                     todo!()
                 }
@@ -215,8 +232,8 @@ impl<'a> Context<'a> {
         };
         
         // Determine the struct's overall alignment
-        let alignment = struct_.fields.item.iter().fold(0, |alignment, x| {
-            std::cmp::max(alignment, self.types.alignment_of(&x.item.field_type))
+        let alignment = struct_.fields.iter().fold(0, |alignment, x| {
+            std::cmp::max(alignment, self.types.alignment_of(&x.field_type))
         });
 
         let mut fields = HashMap::new();
@@ -225,14 +242,14 @@ impl<'a> Context<'a> {
         // Determine each field's aligned offset
         for field in &struct_.fields.item {
             // Account for any needed padding
-            let field_alignment = self.types.alignment_of(&field.item.field_type);
+            let field_alignment = self.types.alignment_of(&field.field_type);
             offset += needed_padding(offset, field_alignment);
             
             // Place field at current offset
-            fields.insert(field.item.field_name, (field.item.field_type.clone(), offset));
+            fields.insert(field.field_name, (field.field_type.clone(), offset));
             
             // Account for the size of the field
-            offset += self.types.size_of(&field.item.field_type);
+            offset += self.types.size_of(&field.field_type);
         }
         
         self.structs.insert(
@@ -253,34 +270,84 @@ impl<'a> Context<'a> {
 
     /// Register a function signature, then validate its contents
     pub fn register_function(&mut self, function: &mut ast::Function<'a>) -> Result<(), String> {
+        self.types.assert_valid(&function.prototype.return_type)?;
+        
         // Registers a function's name and assigns internal types
         self.functions.insert(
-            function.name,
+            function.prototype.name,
             FunctionDefinition {
-                parameters: function.parameters.item.iter().map(|node| {
-                        let field_name = node.item.field_name;
-                        (field_name, node.item.field_type.clone(), node.item.mutable)
+                parameters: function.prototype.parameters.iter().map(|param| {
+                        let field_name = param.field_name;
+                        (field_name, param.field_type.clone(), param.mutable)
                     }).collect(),
-                return_type: function.return_type.clone()
+                return_type: function.prototype.return_type.clone()
             }
         ).map(|_already_existing| {
-            return Err::<(), String>(format!("Function `{}` is already defined", function.name));
+            return Err::<(), String>(format!("Function `{}` is already defined", function.prototype.name));
         });
 
         // Create a new scope containing function inputs
         self.scopes.push_scope();
-        for param in &function.parameters.item {
-            self.types.assert_valid(&param.item.field_type)?;
-            self.scopes.add_var_to_scope(param.item.field_name, param.item.mutable, param.item.field_type.clone())?;
+        for param in &function.prototype.parameters.item {
+            self.types.assert_valid(&param.field_type)?;
+            self.scopes.add_var_to_scope(param.field_name, param.mutable, param.field_type.clone())?;
         }
-
-        for statement in &mut function.statements.item {
-            self.validate_statement(&mut statement.item)?;
-        }
+        
+        // Validate the function body
+        let _implicit_return_type = self.validate_block(&mut function.body, true)?;
         self.scopes.pop_scope();
 
+        if self.last_return_type == function.prototype.return_type {
+            // Reset for the next function
+            self.last_return_type = Type::Unknown;
 
-        Ok(())
+            Ok(())
+        } else {
+            Err(format!("Expected function `{}` to have return type `{:?}` but found `{:?}`", &function.prototype.name, &function.prototype.return_type, &self.last_return_type))
+        }
+    }
+
+    /// Validates a block expression/function body.  
+    /// Returns the block's type.
+    pub fn validate_block(&mut self, block: &mut ast::BlockExpression<'a>, is_function_body: bool) -> Result<Type<'a>, String> {
+        let mut block_type = Type::Unknown;
+
+        for statement in &mut block.block.item {
+            match &mut statement.item {
+                // ImplcitReturn is just a special expression
+                ast::Statement::ImplicitReturn { expression, is_function_return } => {
+                    if is_function_body {
+                        *is_function_return = true;
+                    }
+
+
+                    let expr_type = self.validate_expression(expression)?;
+                    self.types.assert_valid(&expr_type)?;
+
+                    if block_type.is_unknown() {
+                        block_type = expr_type;
+                    } else if block_type != expr_type {
+                        return Err(format!("Differing return types. Expected `{:?}` but found `{:?}`", &block_type, &expr_type));
+                    }
+                }
+
+                _ => self.validate_statement(statement)?,
+            }
+        }
+
+        // No specified type -> Unit
+        if block_type.is_unknown() {
+            block_type = Type::Unit;
+        }
+
+        // Implicit return is used in place of explicit return
+        if is_function_body && self.last_return_type.is_unknown() {
+            self.last_return_type = block_type.clone();
+        }
+
+        block.ty = block_type.clone();
+
+        Ok(block_type)
     }
 
     /// Validates a statement & assigns types
@@ -292,7 +359,7 @@ impl<'a> Context<'a> {
 
                 // Variable is declared and assigned
                 if let Some(expr) = value {
-                    let expr_type = self.validate_expression(&mut expr.item)?;
+                    let expr_type = self.validate_expression(expr)?;
 
                     // Type must be equivalent to the expression type
                     if ty.is_unknown() {
@@ -320,11 +387,23 @@ impl<'a> Context<'a> {
             }
 
             ast::Statement::Return { expression } => {
-                // todo!()
+                // Note the type
+                let return_type = self.validate_expression(expression)?;
+
+                if self.last_return_type.is_unknown() {
+                    self.last_return_type = return_type;
+                } else if self.last_return_type != return_type {
+                    return Err(format!("Found differing return types: `{:?}` and `{:?}`", &return_type, &self.last_return_type));
+                }
             }
 
             ast::Statement::Expression(expr) => {
-                self.validate_expression(&mut expr.item)?;
+                self.validate_expression(expr)?;
+            }
+
+            
+            ast::Statement::ImplicitReturn { expression, .. } => {
+                self.validate_expression(expression)?;
             }
         }
 
@@ -339,7 +418,7 @@ impl<'a> Context<'a> {
             }
 
             ast::Expression::UnaryExpression { op, expr, ty } => {
-                let expr_type = self.validate_expression(&mut expr.item)?;
+                let expr_type = self.validate_expression(expr)?;
                 // TODO: this
                 // todo!()
 
@@ -350,8 +429,16 @@ impl<'a> Context<'a> {
 
             // Recursively determine the type of the expression (and thus all nested expressions)
             ast::Expression::Parenthesized { expr, ty } => {
-                *ty = self.validate_expression(&mut expr.item)?;
+                *ty = self.validate_expression(expr)?;
                 Ok(ty.clone())
+            }
+
+            ast::Expression::Block(block) => {
+                self.scopes.push_scope();
+                let expr_type = self.validate_block(block, false)?;
+                self.scopes.pop_scope();
+
+                Ok(expr_type)
             }
 
             ast::Expression::Literal(literal) => {

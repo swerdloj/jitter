@@ -11,7 +11,7 @@ use cranelift::prelude::*;
 use cranelift_module::{Module, Linkage, DataContext};
 use cranelift_simplejit::{SimpleJITBuilder, SimpleJITModule};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, todo};
 
 /// Contains all information needed to JIT compile and run the generated code
 pub struct JITContext {
@@ -63,7 +63,15 @@ impl JITContext {
         for node in validation_context.ast {
             match node {
                 ast::TopLevel::Function(function) => {
-                    self.generate_function(&function.item)?;
+                    self.generate_function(&function)?;
+                }
+
+                ast::TopLevel::Trait(trait_) => {
+                    todo!()
+                }
+
+                ast::TopLevel::Impl(impl_) => {
+                    todo!()
                 }
 
                 // Struct informs the compiler of raw data. There is nothing to translate (except impls).
@@ -89,11 +97,11 @@ impl JITContext {
     // TODO: How would structs, etc. work?
     fn generate_function(&mut self, function: &ast::Function) -> Result<(), String> {
         // TEMP: debug
-        crate::log!("Generating function `{}`:\n", function.name);
+        crate::log!("Generating function `{}`:\n", function.prototype.name);
 
         // Define the function parameters
-        for parameter in &function.parameters.item {
-            let param_type = parameter.item.field_type.ir_type();
+        for parameter in &function.prototype.parameters.item {
+            let param_type = parameter.field_type.ir_type();
             
             self.fn_context.func.signature.params.push(
                 AbiParam::new(param_type)
@@ -101,7 +109,7 @@ impl JITContext {
         }
         
         // Set return variable
-        let return_type = function.return_type.ir_type();
+        let return_type = function.prototype.return_type.ir_type();
 
         if return_type != types::INVALID {
             self.fn_context.func.signature.returns.push(
@@ -122,7 +130,7 @@ impl JITContext {
         
         // Initial declaration (C-style?)
         let id = self.module
-            .declare_function(function.name, Linkage::Local, &self.fn_context.func.signature)
+            .declare_function(function.prototype.name, Linkage::Local, &self.fn_context.func.signature)
             .map_err(|e| e.to_string())?;
         
         // Define the function
@@ -139,7 +147,7 @@ impl JITContext {
         self.module.finalize_definitions();
 
         // TEMP: for testing
-        self.functions.insert(function.name.to_owned(), id);
+        self.functions.insert(function.prototype.name.to_owned(), id);
 
         Ok(())
     }
@@ -166,10 +174,10 @@ impl FunctionTranslator<'_> {
         self.fn_builder.seal_block(entry_block);
             
         // Declare the function's parameters (entry block params)
-        for (index, param_node) in function.parameters.item.iter().enumerate() {            
-            let param_type = param_node.item.field_type.ir_type();
+        for (index, param_node) in function.prototype.parameters.iter().enumerate() {            
+            let param_type = param_node.field_type.ir_type();
             
-            let var = self.variables.create_var(param_node.item.field_name.to_owned());
+            let var = self.variables.create_var(param_node.field_name.to_owned());
             
             // Decalre the parameter and its type
             self.fn_builder.declare_var(var, param_type);
@@ -181,8 +189,8 @@ impl FunctionTranslator<'_> {
         let return_var = self.variables.create_var("return".to_owned());
         self.fn_builder.declare_var(return_var, return_type);
         
-        for statement in &function.statements.item {
-            self.translate_statement(&statement.item)?;
+        for statement in &function.body.block.item {
+            self.translate_statement(statement)?;
         }
         
         // Return nothing if function has no return type
@@ -211,14 +219,14 @@ impl FunctionTranslator<'_> {
                 );
                 
                 if let Some(value) = value {
-                    let assigned_value = self.translate_expression(&value.item)?;
+                    let assigned_value = self.translate_expression(value)?;
                     self.fn_builder.def_var(var, assigned_value);
                 }
             }
             
             // Assign a value to a variable
             ast::Statement::Assign { variable, operator, expression } => {
-                let expr_value = self.translate_expression(&expression.item)?;
+                let expr_value = self.translate_expression(expression)?;
                 let var = self.variables.get_var(variable)?;
                 
                 match operator.item {
@@ -239,14 +247,24 @@ impl FunctionTranslator<'_> {
                     }
                 }
             }
+
+            ast::Statement::ImplicitReturn { expression, is_function_return } => {
+                let expr_value = self.translate_expression(expression)?;
+                
+                if *is_function_return {
+                    self.fn_builder.ins().return_(&[expr_value]);
+                } else {
+                    todo!()
+                }
+            }
             
             ast::Statement::Return { expression } => {
-                let return_value = self.translate_expression(&expression.item)?;
+                let return_value = self.translate_expression(expression)?;
                 self.fn_builder.ins().return_(&[return_value]);
             }
             
             ast::Statement::Expression(expr) => {
-                self.translate_expression(&expr.item)?;
+                self.translate_expression(&expr)?;
             }
         }
 
@@ -263,7 +281,8 @@ impl FunctionTranslator<'_> {
             ast::Expression::UnaryExpression { op, expr, ty } => {
                 match op.item {
                     ast::UnaryOp::Negate => {
-                        let value = self.translate_expression(&expr.item)?;
+                        let value = self.translate_expression(expr)?;
+                        // TEMP:
                         self.fn_builder.ins().ineg(value)
                     }
 
@@ -273,9 +292,13 @@ impl FunctionTranslator<'_> {
                 }
             }
 
+            ast::Expression::Block(block) => {
+                todo!()
+            }
+
             // FIXME: Is this correct? Do parentheses only matter during parsing?
             ast::Expression::Parenthesized { expr, .. } => {
-                self.translate_expression(&expr.item)?
+                self.translate_expression(expr)?
             }
 
             ast::Expression::Literal(literal) => {

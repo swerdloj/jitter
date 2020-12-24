@@ -9,6 +9,8 @@ pub enum Keyword {
     For,
     Struct,
     Return,
+    Impl,
+    Trait,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
@@ -58,6 +60,8 @@ impl<'input> std::fmt::Display for Token<'input> {
                     Keyword::For => "for",
                     Keyword::Struct => "struct",
                     Keyword::Return => "return",
+                    Keyword::Impl => "impl",
+                    Keyword::Trait => "trait",
                 };
                 format!("keyword: {}", word)
             },
@@ -363,6 +367,23 @@ impl<'input> Lexer<'input> {
                         }
                     }
 
+                    // impl
+                    'i' => {
+                        if self.is_next('m')? {
+                            self.advance();
+                            if self.is_next('p')? {
+                                self.advance();
+                                if self.is_next('l')? {
+                                    self.advance();
+                                    if !self.is_next_alphanumeric()? {
+                                        self.advance();
+                                        token = Some(Token::Keyword(self::Keyword::Impl));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // let
                     'l' => {
                         if self.is_next('e')? {
@@ -430,6 +451,26 @@ impl<'input> Lexer<'input> {
                                                 self.advance();
                                                 token = Some(Token::Keyword(self::Keyword::Struct));
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // trait
+                    't' => {
+                        if self.is_next('r')? {
+                            self.advance();
+                            if self.is_next('a')? {
+                                self.advance();
+                                if self.is_next('i')? {
+                                    self.advance();
+                                    if self.is_next('t')? {
+                                        self.advance();
+                                        if !self.is_next_alphanumeric()? {
+                                            self.advance();
+                                            token = Some(Token::Keyword(self::Keyword::Trait));
                                         }
                                     }
                                 }

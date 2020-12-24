@@ -14,6 +14,8 @@ fn
 for
 struct
 return
+impl
+trait
 
 // symbols
 - + * / = < > , : ; ! ( ) { } [ ]

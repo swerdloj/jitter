@@ -13,4 +13,3 @@ pub fn validate_ast<'input>(ast: super::parse::ast::AST<'input>) -> Result<conte
 
     Ok(context)
 }
-

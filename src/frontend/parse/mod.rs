@@ -1,4 +1,5 @@
 pub mod ast;
+
 pub(self) use super::lex; // for convenience
 
 use crate::Span;
@@ -75,6 +76,10 @@ impl<'a> Parser<'a> {
         &self.current().token
     }
 
+    fn look_ahead(&self, n: usize) -> &Token {
+        &self.tokens[*self.position.borrow() + n].token
+    }
+
     fn advance(&self) {
         *self.position.borrow_mut() += 1;
     }
@@ -111,6 +116,22 @@ impl<'a> Parser<'a> {
                         );
                     }
 
+                    Keyword::Trait => {
+                        self.advance();
+
+                        item = ast::TopLevel::Trait(
+                            self.parse_trait_definition()
+                        );
+                    }
+
+                    Keyword::Impl => {
+                        self.advance();
+
+                        item = ast::TopLevel::Impl(
+                            self.parse_impl()
+                        );
+                    }
+
                     Keyword::Struct => {
                         self.advance();
 
@@ -132,6 +153,156 @@ impl<'a> Parser<'a> {
         }
 
         item
+    }
+
+    pub fn parse_trait_definition(&self) -> Node<ast::Trait> {
+        // span of `trait` keyword
+        let start = self.previous_span();
+
+        if let Token::Ident(name) = self.current_token() {
+            self.advance();
+            if let Token::OpenCurlyBrace = self.current_token() {
+                self.advance();
+
+                let mut required_functions = Vec::new();
+                let mut default_functions = Vec::new();
+
+                while *self.current_token() != Token::CloseCurlyBrace {
+                    match self.current_token() {
+                        // TODO: Constants, assosiated types, etc.
+                        Token::Keyword(Keyword::Fn) => {
+                            let fn_start = self.current_span();
+                            self.advance();
+
+                            let prototype = self.parse_function_prototype();
+                            // No default implementation
+                            if let Token::Semicolon = self.current_token() {
+                                self.advance();
+                                required_functions.push(prototype);
+                            } else {
+                                let body = self.parse_expression_block();
+                                let function = ast::Function {
+                                    prototype,
+                                    body,
+                                };
+                                default_functions.push(Node::new(function, fn_start.extend(*self.previous_span())));
+                            }
+                        }
+
+                        // Token::Keyword(Keyword::Const) => {}
+                        // Token::Keyword(Keyword::Type) => {}
+
+                        _ => {
+                            parser_error!(self.file_path, self.current_span(), "Expected one of `fn`, `const`, `type`. Found `{}`", self.current_token());
+                        }
+                    }
+                }
+                // Advance past closing `}`
+                self.advance();
+
+                let trait_ = ast::Trait {
+                    name,
+                    default_functions,
+                    required_functions,
+                };
+
+                Node::new(trait_, start.extend(*self.previous_span()))
+            } else {
+                parser_error!(self.file_path, self.current_span(), "Expected `{{`, found `{}`", self.current_token());
+            }
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected trait identifier. Found `{}`", self.current_token());
+        }
+    }
+
+    // impl Trait for Type {..}
+    // or
+    // impl Type {..}
+    pub fn parse_impl(&self) -> Node<ast::Impl> {
+        // span of `impl` keyword
+        let start = self.previous_span();
+
+        // TODO: Create a `parse_impl_body` to simplify this
+        // FIXME: Copy/pasted sections
+        if let Token::Ident(name1) = self.current_token() {
+            self.advance();
+
+            match self.current_token() {
+                // impl trait for type {..}
+                Token::Keyword(Keyword::For) => {
+                    self.advance();
+                    
+                    if let Token::Ident(target_name) = self.current_token() {
+                        self.advance();
+
+                        // FIXME: This body is copy/pasted
+                        if let Token::OpenCurlyBrace = self.current_token() {
+                            self.advance();
+
+                            let mut functions = Vec::new();
+                            // TODO: Constants, etc.
+                            while let Token::Keyword(Keyword::Fn) = self.current_token() {
+                                self.advance();
+                                functions.push(self.parse_function_definition());
+                            }
+
+                            if let Token::CloseCurlyBrace = self.current_token() {
+                                self.advance();
+
+                                let impl_ = ast::Impl {
+                                    // No name implies base impl
+                                    trait_name: name1,
+                                    target_name,
+                                    functions,
+                                };
+
+                                Node::new(impl_, start.extend(*self.previous_span()))
+                            } else {
+                                parser_error!(self.file_path, self.current_span(), "Expected `}}`. Found `{}`", self.current_token());
+                            }
+                        } else {
+                            parser_error!(self.file_path, self.current_span(), "Expected `{{`. Found `{}`", self.current_token());
+                        }
+                    } else {
+                        parser_error!(self.file_path, self.current_span(), "Expected identifier. Found `{}`", self.current_token());
+                    }
+                }
+
+                // impl type {..}
+                // FIXME: This body is duplicated above
+                Token::OpenCurlyBrace => {
+                    self.advance();
+
+                    let mut functions = Vec::new();
+                    // TODO: Constants, etc.
+                    while let Token::Keyword(Keyword::Fn) = self.current_token() {
+                        self.advance();
+                        functions.push(self.parse_function_definition());
+                    }
+
+                    if let Token::CloseCurlyBrace = self.current_token() {
+                        self.advance();
+
+                        let impl_ = ast::Impl {
+                            // No name implies base impl
+                            trait_name: "",
+                            target_name: name1,
+                            functions,
+                        };
+
+                        Node::new(impl_, start.extend(*self.previous_span()))
+                    } else {
+                        parser_error!(self.file_path, self.current_span(), "Expected `}}`. Found `{}`", self.current_token());
+                    }
+                }
+
+                x => {
+                    parser_error!(self.file_path, self.current_span(), "Expected `for` or `{{`. Found `{}`", x);
+                }
+            }
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected identifier. Found `{}`", self.current_token());
+        }
     }
 
     // TODO: Do I want tuple structs and/or unit structs?
@@ -210,8 +381,24 @@ impl<'a> Parser<'a> {
         Node::new(fields, start.extend(*self.previous_span()))
     }
 
-    // fn ident(param: type, ..) -> return_type { statements }
+    // fn ident(param: type, ..) -> return_type { statements.. }
     pub fn parse_function_definition(&self) -> Node<ast::Function> {
+        // span of `fn` keyword
+        let start = self.previous_span();
+
+        let prototype = self.parse_function_prototype();
+        let body = self.parse_expression_block();
+
+        let function = ast::Function {
+            prototype,
+            body,
+        };
+
+        Node::new(function, start.extend(*self.previous_span()))
+    }
+
+    // fn ident(param: type, ..) -> return_type
+    pub fn parse_function_prototype(&self) -> Node<ast::FunctionPrototype> {
         // span of `fn` keyword
         let start = self.previous_span();
 
@@ -248,21 +435,13 @@ impl<'a> Parser<'a> {
                 Type::Unit
             };
 
-            let statements = if let Token::OpenCurlyBrace = self.current_token() {
-                self.advance();
-                self.parse_statement_block()
-            } else {
-                parser_error!(self.file_path, self.current_span(), "Expected `{{` to form a statement block implementing a function. Found `{}`", self.current_token());
-            };
-
-            let function = ast::Function {
+            let prototype = ast::FunctionPrototype {
                 name,
                 parameters,
                 return_type,
-                statements,
             };
 
-            Node::new(function, start.extend(*self.previous_span()))
+            Node::new(prototype, start.extend(*self.previous_span()))
         } else {
             parser_error!(self.file_path, self.current_span(), "Expected identifier, found `{}` while parsing function definition", self.current_token());
         }
@@ -326,28 +505,14 @@ impl<'a> Parser<'a> {
         Node::new(parameters, start.extend(*self.previous_span()))
     }
 
-    pub fn parse_statement_block(&self) -> Node<ast::StatementBlock> {
-        let mut statements = Vec::new();
-        // span of `{` token
-        let start = self.previous_span();
-
-        loop {
-            if let Token::CloseCurlyBrace = self.current_token() {
-                self.advance();
-                break;
-            }
-
-            // This will not allow an infinite loop
-            statements.push(self.parse_statement());
-        }
-        
-        Node::new(statements, start.extend(*self.previous_span()))
-    }
-
+    /// Parses a statement terminated by ';'. 
+    /// Assumes implicit return for non-terminated expressions
     pub fn parse_statement(&self) -> Node<ast::Statement> {
         let statement;
         // span of first statement element (`let` keyword, expression, etc.)
         let start = self.current_span();
+
+        let mut needs_semicolon = true;
 
         match self.current_token() {
             // let mut ident: type = expr;
@@ -440,18 +605,26 @@ impl<'a> Parser<'a> {
                                 expression: self.parse_expression(),
                             };
                         } else {
-                            parser_error!(self.file_path, self.current_span(), "Expected `=` to create an op-assign statement. Found `{}`", self.current_token());
+                            parser_error!(self.file_path, op_token.span, "Expected `{}=` to create an op-assign statement. Found `{}`", op_token.token, op_token.token);
                         }
                     }
 
                     // TODO: This should probably be removed eventually
-                    // x;
+                    // Found: `ident;`
                     Token::Semicolon => {
                         parser_error!(self.file_path, self.current_span(), "Identifier as statement does nothing");
                     }
 
+                    // NOTE: Current token is not a semicolon
+                    // Found: `ident`
                     _ => {
-                        parser_error!(self.file_path, self.current_span(), "Expected beginning of statement. Found `{}`", self.current_token());
+                        // TODO: Ensure this is correct
+                        statement = ast::Statement::ImplicitReturn {
+                            expression: Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
+                            is_function_return: false,
+                        };
+
+                        needs_semicolon = false;
                     }
                 }
             }
@@ -459,18 +632,61 @@ impl<'a> Parser<'a> {
             // Must be an expression
             _ => {
                 let expression = self.parse_expression();
-                statement = ast::Statement::Expression(expression);
+                statement = if let Token::Semicolon = self.current_token() {   
+                    // Terminated by semicolon
+                    ast::Statement::Expression(expression)
+                } else {
+                    needs_semicolon = false;
+                    // Not terminated -> assume implicit return
+                    ast::Statement::ImplicitReturn {
+                        expression,
+                        is_function_return: false,
+                    }
+                };
             }
         }
 
         // expects semicolon
         if let Token::Semicolon = self.current_token() {
             self.advance();
-        } else {
+        } else if needs_semicolon {
             parser_error!(self.file_path, self.current_span(), "Expected `;` to terminate a statement. Found `{}`", self.current_token());
         }
 
         Node::new(statement, start.extend(*self.previous_span()))
+    }
+
+    // NOTE: Special case (not technically an expression)
+    fn parse_expression_block(&self) -> Node<ast::BlockExpression> {
+        // Starting `{`
+        let start = self.current_span();
+
+        let body = if let Token::OpenCurlyBrace = self.current_token() {
+            self.advance();
+
+            let mut body = Vec::new();
+    
+            loop {
+                if let Token::CloseCurlyBrace = self.current_token() {
+                    self.advance();
+                    break;
+                }
+    
+                // This will not allow an infinite loop
+                body.push(self.parse_statement());
+            }
+
+            Node::new(body, start.extend(*self.previous_span()))
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected `{{` to form a statement block implementing a function. Found `{}`", self.current_token());
+        };
+
+        let block_expression = ast::BlockExpression {
+            block: body,
+            ty: Type::Unknown,
+        };
+
+        Node::new(block_expression, start.extend(*self.previous_span()))
     }
 
     //////////////// ONLY EXPRESSIONS BELOW THIS LINE ////////////////

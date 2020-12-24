@@ -1,5 +1,3 @@
-use std::todo;
-
 // TODO: CLI interface for the compiler (isolated JIT code, no embedded env.)
 
 fn main() {
@@ -7,14 +5,17 @@ fn main() {
 
     println!("
 Usage:
-  lang INPUT_PATH --FLAGS
+  jitter INPUT_PATH --FLAGS       Run a jitter file
+  jitter                          Open jitter REPL session
 
 Flags:
-  --output OUTPUT_PATH
-  --CLIF
+  --help FLAG                     Display a flag's help information
+  --output OUTPUT_PATH            Specify file output path
+  --CLIF                          Output Cranelift IR to a file
+  --AST                           Output the jitter AST to a file
 ...
 
-Run 'lang --help FLAG' for more detailed information
+Run 'jitter --help FLAG' for more detailed information
 ");
 
     let mut i = 0;

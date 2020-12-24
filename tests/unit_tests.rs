@@ -59,6 +59,8 @@ mod tests {
             Token::Keyword(Keyword::For),
             Token::Keyword(Keyword::Struct),
             Token::Keyword(Keyword::Return),
+            Token::Keyword(Keyword::Impl),
+            Token::Keyword(Keyword::Trait),
             Token::Minus,
             Token::Plus,
             Token::Asterisk,
