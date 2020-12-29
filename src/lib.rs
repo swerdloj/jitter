@@ -38,7 +38,7 @@ pub fn create_local_context(path: &str) -> backend::codegen::JITContext {
 
     let parser = frontend::parse::Parser::new(path, tokens);
     let ast = parser.parse_ast();
-    log!("AST:\n{:#?}", ast);
+    // log!("AST:\n{:#?}", ast);
 
     let validation_context = frontend::validate::validate_ast(ast).unwrap();
 

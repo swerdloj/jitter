@@ -2,35 +2,23 @@
 // As new functionality is added to the compiler, this file
 // will grow to test that functionality.
 
-// fn multiply(a: i32, b: i32) -> i32 {
-//     let result: i32 = a * b;
-
-//     // TODO: Implement return values
-//     return a * b;
-// }
-
 // TODO: static, const, @ tags
 // TODO: Implement and test out hot-reloading
 // @persistent
 // static mut TEST: u32 = 0;
 
 // trait Trait {
-//     fn test() -> u8;
+//     fn test(&self) -> u8;
 // }
 
-struct Test {
-    a: u8,
-    b: u16,
-    c: u64,
-}
-
-// impl Test {}
-
+// TODO: Trait impls
 // impl Trait for Test {
-//     fn test() -> u8 { 7 }
+//     fn test(&self) -> u8 { 
+//         self.a
+//     }
 // }
 
-// TODO: impls
+// TODO: Type impls
 // impl Test {
 //     fn add_one(&mut self) {
 //         self.a += 1;
@@ -52,6 +40,17 @@ struct Test {
 
 //     return test;
 // }
+
+// TODO: Operators
+// fn multiply(a: i32, b: i32) -> i32 {
+//     a * b
+// }
+
+struct Test {
+    a: u8,
+    b: u16,
+    c: u64,
+}
 
 fn negate(a: i32) -> i32 {
     // immediate type inferrence

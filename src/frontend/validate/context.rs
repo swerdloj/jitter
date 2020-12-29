@@ -20,6 +20,7 @@ struct TypeTable<'input> {
 
 impl<'input> TypeTable<'input> {
     // TODO: Accept word size here and adjust table accordingly
+    // TODO: Support `isize` and `usize`
     fn new() -> Self {
         let mut data = HashMap::new();
 
@@ -50,22 +51,31 @@ impl<'input> TypeTable<'input> {
 
     fn insert(&mut self, t: &Type<'input>, entry: TypeTableEntry) -> Result<(), String> {
         match self.data.insert(t.clone(), entry) {
-            Some(_) => Err(format!("Type {:?} already exists", t.clone())),
+            Some(_) => Err(format!("Type {} already exists", t.clone())),
             None => Ok(()),
         }
     }
 
     fn assert_valid(&mut self, t: &Type<'input>) -> Result<(), String> {
+        // Strip away references to check the underlying type
+        if let Type::Reference { ty, .. } = t {
+            return Ok(self.assert_valid(ty)?);
+        }
+        
         if self.data.contains_key(t) {
             Ok(())
         } else {
-            Err(format!("Type `{:?}` is not valid", t))
+            Err(format!("Type `{}` is not valid", t))
         }
     }
 
     /// Returns alignment of the type in bytes
     fn alignment_of(&self, t: &Type) -> usize {
-        self.data.get(t).unwrap().alignment
+        if let &Type::Reference {..} = t {
+            // TODO: Alignment should be same as pointer type
+            todo!("need pointer type stuff");
+        }
+        self.data.get(t).expect("alignment_of").alignment
     }
 
     /// Returns the size of the type in bytes
@@ -85,7 +95,7 @@ impl TypeTableEntry {
     }
 }
 
-struct FunctionDefinition<'input> {
+pub struct FunctionDefinition<'input> {
     // (name, type, mutable)
     parameters: Vec<(&'input str, Type<'input>, bool)>,
     return_type: Type<'input>,
@@ -154,7 +164,7 @@ impl<'input> VariableData<'input> {
 
 pub struct Context<'input> {
     /// Function signatures
-    functions: HashMap<&'input str, FunctionDefinition<'input>>,
+    pub functions: HashMap<&'input str, FunctionDefinition<'input>>,
     /// Struct signatures
     structs: HashMap<&'input str, StructDefinition<'input>>,
     /// Type information
@@ -268,6 +278,8 @@ impl<'a> Context<'a> {
         Ok(())
     }
 
+    // TODO: Handle `self` parameter -- needs context of `impl`
+    //       `Self` type must be handled similarly
     /// Register a function signature, then validate its contents
     pub fn register_function(&mut self, function: &mut ast::Function<'a>) -> Result<(), String> {
         self.types.assert_valid(&function.prototype.return_type)?;
@@ -303,7 +315,7 @@ impl<'a> Context<'a> {
 
             Ok(())
         } else {
-            Err(format!("Expected function `{}` to have return type `{:?}` but found `{:?}`", &function.prototype.name, &function.prototype.return_type, &self.last_return_type))
+            Err(format!("Expected function `{}` to have return type `{}` but found `{}`", &function.prototype.name, &function.prototype.return_type, &self.last_return_type))
         }
     }
 
@@ -327,7 +339,7 @@ impl<'a> Context<'a> {
                     if block_type.is_unknown() {
                         block_type = expr_type;
                     } else if block_type != expr_type {
-                        return Err(format!("Differing return types. Expected `{:?}` but found `{:?}`", &block_type, &expr_type));
+                        return Err(format!("Differing return types. Expected `{}` but found `{}`", &block_type, &expr_type));
                     }
                 }
 
@@ -365,7 +377,7 @@ impl<'a> Context<'a> {
                     if ty.is_unknown() {
                         *ty = expr_type;
                     } else if ty != &expr_type {
-                        return Err(format!("Variable `{}` has type `{:?}`, but is assigned the type `{:?}`", ident, ty, expr_type));
+                        return Err(format!("Variable `{}` has type `{}`, but is assigned the type `{}`", ident, ty, expr_type));
                     }
                 // Variable is declared, not assigned
                 } else {
@@ -393,7 +405,7 @@ impl<'a> Context<'a> {
                 if self.last_return_type.is_unknown() {
                     self.last_return_type = return_type;
                 } else if self.last_return_type != return_type {
-                    return Err(format!("Found differing return types: `{:?}` and `{:?}`", &return_type, &self.last_return_type));
+                    return Err(format!("Found differing return types: `{}` and `{}`", &return_type, &self.last_return_type));
                 }
             }
 

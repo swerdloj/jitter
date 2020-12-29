@@ -13,9 +13,11 @@ mut
 fn
 for
 struct
+enum
 return
 impl
 trait
+self
 
 // symbols
-- + * / = < > , : ; ! ( ) { } [ ]
+@ - + * / = < > , : ; & ! | ( ) { } [ ]

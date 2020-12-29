@@ -155,6 +155,79 @@ impl<'a> Parser<'a> {
         item
     }
 
+    // TODO: Use this whenever possible for parsing types
+    //       Need to look through to see where applicable
+    /// Recursively evaluates types
+    pub fn parse_type(&self) -> Type { //Result<Type, String> {
+        let type_;
+
+        // TODO: `dyn`, `impl`, etc.
+        match self.current_token() {
+            // `T`
+            Token::Ident(ident) => {
+                self.advance();
+                type_ = Type::resolve_builtin(ident);
+            }
+
+            // `&T` or `&mut T`
+            Token::And => {
+                self.advance();
+                let mutable = &Token::Keyword(Keyword::Mut) == self.current_token();
+
+                type_ = Type::Reference {
+                    ty: Box::new(self.parse_type()),
+                    mutable,
+                };
+            }
+
+            // `()` or Tuple
+            Token::OpenParen => {
+                self.advance();
+
+                // Unit: ()
+                if let Token::CloseParen = self.current_token() {
+                    self.advance();
+                    type_ = Type::Unit;
+                // Tuple: (A, B, C, ..)
+                } else {
+                    let mut tuple_types = Vec::new();
+                    // TODO: Need to prevent loop from eating an entire file
+                    // let mut loop_count = 0;
+                    loop {
+                        tuple_types.push(self.parse_type());
+
+                        // FIXME: There is probably a better way to allow trailing comma
+                        if self.current_token() == &Token::Comma {
+                            self.advance();
+                            if self.current_token() == &Token::CloseParen {
+                                self.advance();
+                                break;
+                            }
+                        } else if self.current_token() == &Token::CloseParen {
+                            self.advance();
+                            break;
+                        }
+                    }
+
+                    type_ = Type::Tuple(tuple_types);
+                }
+            }
+
+            // TODO: Arrays
+            Token::OpenSquareBracket => {
+                self.advance();
+                todo!("arrays")
+            }
+
+            // Invalid type component
+            x => {
+                parser_error!(self.file_path, self.current_span(), "Expected a type component. Found `{}`", x);
+            }
+        }
+        
+        type_
+    }
+
     pub fn parse_trait_definition(&self) -> Node<ast::Trait> {
         // span of `trait` keyword
         let start = self.previous_span();
@@ -347,18 +420,17 @@ impl<'a> Parser<'a> {
                 self.advance();
                 if let Token::Colon = self.current_token() {
                     self.advance();
-                    if let Token::Ident(field_type) = self.current_token() {
-                        self.advance();
-                        let field = ast::StructField {
-                            field_name,
-                            field_type: Type::resolve(field_type),
-                        };
-                        fields.push(
-                            Node::new(field, span.extend(*self.previous_span()))
-                        );
-                    } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
-                    }
+
+                    let field = ast::StructField {
+                        field_name,
+                        field_type: self.parse_type(),
+                    };
+
+                    fields.push(
+                        Node::new(field, span.extend(*self.previous_span()))
+                    );
+
+                    // parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
                 } else {
                     parser_error!(self.file_path, self.current_span(), "Expected `:` after struct field name. Found `{}`", self.current_token());
                 }
@@ -415,18 +487,12 @@ impl<'a> Parser<'a> {
             // `()` type is same as Rust's
             let return_type = if let Token::Minus = self.current_token() {
                 self.advance();
-
                 // found `->`
                 if let Token::RightAngleBracket = self.current_token() {
                     self.advance();
 
-                    // TODO: Allow tuples, arrays, etc.
-                    if let Token::Ident(return_type) = self.current_token() {
-                        self.advance();
-                        Type::resolve(*return_type)
-                    } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current_token());
-                    }
+                    self.parse_type()
+                    // parser_error!(self.file_path, self.current_span(), "Expected a return type after `->`. Founds `{}`", self.current_token());
                 } else {
                     parser_error!(self.file_path, self.current_span(), "Expected `->`. Found `{}`", self.current_token());
                 }
@@ -448,6 +514,7 @@ impl<'a> Parser<'a> {
     }
 
     // (ident: type, ident: type, ..)
+    // `self` becomes `self: Unknown` which later becomes `self: T` for `T`
     pub fn parse_function_parameters(&self) -> Node<ast::FunctionParameterList> {
         let mut parameters = Vec::new();
         // span of `(` token
@@ -468,21 +535,31 @@ impl<'a> Parser<'a> {
                 mutable = true;
             }
 
-            if let Token::Ident(field_name) = self.current_token() {
+            // fn ident(&? mut? self, ...)
+            if let Token::Keyword(Keyword::Self_) = self.current_token() {
+                self.advance();
+                let param = ast::FunctionParameter {
+                    mutable,
+                    field_name: "self",
+                    // FIXME: This will later be replaced with the proper `User` variant. 
+                    //        Is there a better approach?
+                    field_type: Type::Unknown,
+                };
+                parameters.push(Node::new(param, span.extend(*self.previous_span())));
+            }
+            else if let Token::Ident(field_name) = self.current_token() {
                 self.advance();
                 if let Token::Colon = self.current_token() {
                     self.advance();
-                    if let Token::Ident(field_type) = self.current_token() {
-                        self.advance();
-                        let param = ast::FunctionParameter {
-                            mutable,
-                            field_name,
-                            field_type: Type::resolve(field_type),
-                        };
-                        parameters.push(Node::new(param, span.extend(*self.previous_span())));
-                    } else {
-                        parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
-                    }
+
+                    let param = ast::FunctionParameter {
+                        mutable,
+                        field_name,
+                        field_type: self.parse_type(),
+                    };
+
+                    // parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());
+                    parameters.push(Node::new(param, span.extend(*self.previous_span())));
                 } else {
                     parser_error!(self.file_path, self.current_span(), "Expected `:` after function parameter. Found `{}`", self.current_token());
                 }
@@ -534,18 +611,16 @@ impl<'a> Parser<'a> {
                     self.advance();
                     ident = ident_;
 
+                    // Has `:` -> Type must be specified
                     ty = if let Token::Colon = self.current_token() {
                         self.advance();
-                        if let Token::Ident(type_) = self.current_token() {
-                            self.advance();
-                            Type::resolve(*type_)
-                        } else {
-                            parser_error!(self.file_path, self.current_span(), "Expected type after `:`. Found `{}`", self.current_token());
-                        }
+                        self.parse_type()
+                        // parser_error!(self.file_path, self.current_span(), "Expected type after `:`. Found `{}`", self.current_token());
                     } else {
                         Type::Unknown
                     };
 
+                    // Has `=` -> Must have assignment expression
                     expression = if let Token::Equals = self.current_token() {
                         self.advance();
                         Some(self.parse_expression())

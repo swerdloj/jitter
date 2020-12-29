@@ -1,9 +1,7 @@
-// TODO: Consider a trait implemented by all AST types which generates cranelift
-//       code
-
 // References: 
 // https://github.com/bytecodealliance/simplejit-demo/blob/main/src/jit.rs
 // https://github.com/bytecodealliance/wasmtime/blob/main/cranelift/simplejit/examples/simplejit-minimal.rs
+// https://github.com/CraneStation/kaleidoscope-cranelift
 
 use crate::frontend::parse::ast;
 
@@ -11,7 +9,7 @@ use cranelift::prelude::*;
 use cranelift_module::{Module, Linkage, DataContext};
 use cranelift_simplejit::{SimpleJITBuilder, SimpleJITModule};
 
-use std::{collections::HashMap, todo};
+use std::collections::HashMap;
 
 /// Contains all information needed to JIT compile and run the generated code
 pub struct JITContext {
@@ -25,6 +23,8 @@ pub struct JITContext {
 
     // TEMP: for testing
     functions: HashMap<String, cranelift_module::FuncId>,
+
+    pointer_type: Type,
 }
 
 impl JITContext {
@@ -42,14 +42,19 @@ impl JITContext {
         let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
         let module = SimpleJITModule::new(builder);
 
+        let pointer_type = module.target_config().pointer_type();
+        crate::log!("Pointer type is: {}\n", pointer_type);
+
         Self {
             fn_builder_context: FunctionBuilderContext::new(),
             fn_context: module.make_context(),
             data_context: DataContext::new(),
             module,
 
-            // TEMP:
+            // TEMP: Might want to keep this or make it optional depending on usage
             functions: HashMap::new(),
+
+            pointer_type,
         }
     }
 
@@ -60,6 +65,11 @@ impl JITContext {
     }
 
     pub fn translate(&mut self, validation_context: crate::frontend::validate::context::Context) -> Result<(), String> {
+        // TODO: Use validation context to declare all functions first
+        // for function in &validation_context.functions {
+        // }
+
+
         for node in validation_context.ast {
             match node {
                 ast::TopLevel::Function(function) => {
@@ -101,7 +111,7 @@ impl JITContext {
 
         // Define the function parameters
         for parameter in &function.prototype.parameters.item {
-            let param_type = parameter.field_type.ir_type();
+            let param_type = parameter.field_type.ir_type(&self.pointer_type);
             
             self.fn_context.func.signature.params.push(
                 AbiParam::new(param_type)
@@ -109,7 +119,7 @@ impl JITContext {
         }
         
         // Set return variable
-        let return_type = function.prototype.return_type.ir_type();
+        let return_type = function.prototype.return_type.ir_type(&self.pointer_type);
 
         if return_type != types::INVALID {
             self.fn_context.func.signature.returns.push(
@@ -119,7 +129,7 @@ impl JITContext {
         
         let mut function_translator = FunctionTranslator {
             fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
-            // type_map: &mut self.type_map,
+            pointer_type: &self.pointer_type,
             variables: super::VarMap::new(),
         };
         
@@ -158,6 +168,7 @@ impl JITContext {
 // Translates a function and its contents into IR
 struct FunctionTranslator<'a> {
     fn_builder: FunctionBuilder<'a>,
+    pointer_type: &'a Type,
     // Maps `Variable`s with names
     variables: super::VarMap,
 }
@@ -175,7 +186,7 @@ impl FunctionTranslator<'_> {
             
         // Declare the function's parameters (entry block params)
         for (index, param_node) in function.prototype.parameters.iter().enumerate() {            
-            let param_type = param_node.field_type.ir_type();
+            let param_type = param_node.field_type.ir_type(&self.pointer_type);
             
             let var = self.variables.create_var(param_node.field_name.to_owned());
             
@@ -215,7 +226,7 @@ impl FunctionTranslator<'_> {
                 let var = self.variables.create_var(ident.to_string());
                 self.fn_builder.declare_var(
                     var,
-                    ty.ir_type()
+                    ty.ir_type(&self.pointer_type)
                 );
                 
                 if let Some(value) = value {

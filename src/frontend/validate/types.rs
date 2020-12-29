@@ -5,6 +5,20 @@ use cranelift::codegen::ir::types as cranelift_types;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum Type<'input> {
+    // &T or &mut T
+    Reference {
+        ty: Box<Type<'input>>,
+        mutable: bool,
+    },
+
+    // TODO: Does it makes sense to allow raw pointers in an embedded language?
+    //       Seems like grounds for safety (security) issues
+    // *const T or *mut T
+    // Pointer {
+    //     ty: Box<Type<'input>>,
+    //     mutable: bool,
+    // },
+
     u8,
     u16,
     u32,
@@ -17,6 +31,9 @@ pub enum Type<'input> {
     i64,
     i128,
 
+    usize,
+    isize,
+
     f32,
     f64,
 
@@ -27,6 +44,12 @@ pub enum Type<'input> {
 
     /// (A, B, C, ...)
     Tuple(Vec<Type<'input>>),
+
+    // [type; length]
+    // Array {
+    //     ty: Box<Type<'input>>,
+    //     length: usize,
+    // },
     
     /// Name of a struct, enum, alias, etc.
     User(&'input str),
@@ -35,9 +58,54 @@ pub enum Type<'input> {
     Unknown,
 }
 
+impl std::fmt::Display for Type<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Type::Reference { ty, mutable } => {
+                let mut_str = if *mutable {"mut "} else {""};
+                format!("&{}{}", mut_str, ty)
+            },
+            // TODO: Might not want raw pointers at all
+            // Type::Pointer { ty, mutable } => format!("TODO:"),
+            Type::u8 => "u8".to_owned(),
+            Type::u16 => "u16".to_owned(),
+            Type::u32 => "u32".to_owned(),
+            Type::u64 => "u64".to_owned(),
+            Type::u128 => "u128".to_owned(),
+            Type::i8 => "i8".to_owned(),
+            Type::i16 => "i16".to_owned(),
+            Type::i32 => "i32".to_owned(),
+            Type::i64 => "i64".to_owned(),
+            Type::i128 => "i128".to_owned(),
+            Type::usize => "usize".to_owned(),
+            Type::isize => "isize".to_owned(),
+            Type::f32 => "f32".to_owned(),
+            Type::f64 => "f64".to_owned(),
+            Type::bool => "bool".to_owned(),
+            Type::Unit => "()".to_owned(),
+            Type::Tuple(types) => {
+                let mut string = String::from("(");
+
+                for t in types {
+                    string.push_str(&format!("{}, ", t));
+                }
+                // Remove trailing ", "
+                string.pop();
+                string.pop();
+
+                string
+            },
+            Type::User(t) => String::from(*t),
+            Type::Unknown => "!Unknown!".to_owned(),
+        };
+
+        write!(f, "{}", string)
+    }
+}
+
 impl<'input> Type<'input> {
     /// Resolves a type (as text) obtained from lexer/parser to an internal type
-    pub fn resolve(type_str: &str) -> Type {
+    pub fn resolve_builtin(type_str: &str) -> Type {
         match type_str {
             "u8" => Type::u8,
             "u16" => Type::u16,
@@ -51,14 +119,14 @@ impl<'input> Type<'input> {
             "i64" => Type::i64,
             "i128" => Type::i128,
 
+            "usize" => Type::usize,
+            "isize" => Type::isize,
+
             "f32" => Type::f32,
             "f64" => Type::f64,
 
             "bool" => Type::bool,
-
-            "()" => Type::Unit,
-
-            // TODO: Tuples? Arrays?
+            // Tuples, arrays, etc. are handled by `parse::parse_type`
             _ => Type::User(type_str),
         }
     }
@@ -67,9 +135,25 @@ impl<'input> Type<'input> {
         self == &Type::Unknown
     }
 
-    pub fn ir_type(&self) -> cranelift_types::Type {
+    // pub fn is_reference(&self) -> bool {
+    //     if let Type::Reference {..} = self { true } else { false }
+    // }
+
+    // This is useful for determining whether an assignment is valid 
+    // (variable doesn't need to be mutable if reference is mutable)
+    pub fn is_mutable_reference(&self) -> bool {
+        if let Type::Reference { mutable: true, ..} = self { true } else { false }
+    }
+
+    pub fn ir_type(&self, pointer_type: &cranelift_types::Type) -> cranelift_types::Type {
         // NOTE: `I` is for `integer` -> sign is not regarded
         match self {
+            // These are all `size` regardless of whether unsigned, reference, or pointer
+            Type::usize
+            | Type::isize
+            | Type::Reference { .. } 
+            /*| Type::Pointer { .. } */ => *pointer_type,
+
             Type::u8 => cranelift_types::I8,
             Type::u16 => cranelift_types::I16,
             Type::u32 => cranelift_types::I32,
@@ -90,9 +174,9 @@ impl<'input> Type<'input> {
             // TODO: What to do about these?
             Type::Unit => cranelift_types::INVALID,
             Type::Tuple(_) => cranelift_types::INVALID,
-            Type::Unknown => cranelift_types::INVALID,
-
             Type::User(_) => cranelift_types::INVALID,
+
+            Type::Unknown => cranelift_types::INVALID,
         }
     }
 }

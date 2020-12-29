@@ -8,9 +8,11 @@ pub enum Keyword {
     Fn,
     For,
     Struct,
+    Enum,
     Return,
     Impl,
     Trait,
+    Self_,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
@@ -20,6 +22,8 @@ pub enum Token<'input> {
     Ident(&'input str),
     Keyword(Keyword),
     
+    At,                 // '@'
+
     Minus,              // '-'
     Plus,               // '+'
     Asterisk,           // '*'
@@ -33,7 +37,9 @@ pub enum Token<'input> {
     Colon,              // ':'
     Semicolon,          // ';'
 
+    And,                // '&'
     Bang,               // '!'
+    Pipe,               // '|'
 
     Whitespace,         // '\r', '\n', '\t', ' ', .. 
 
@@ -59,12 +65,15 @@ impl<'input> std::fmt::Display for Token<'input> {
                     Keyword::Fn => "fn",
                     Keyword::For => "for",
                     Keyword::Struct => "struct",
+                    Keyword::Enum => "enum",
                     Keyword::Return => "return",
                     Keyword::Impl => "impl",
                     Keyword::Trait => "trait",
+                    Keyword::Self_ => "self",
                 };
                 format!("keyword: {}", word)
             },
+            Token::At => "@".to_owned(),
             Token::Minus => "-".to_owned(),
             Token::Plus => "+".to_owned(),
             Token::Asterisk => "*".to_owned(),
@@ -76,6 +85,8 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Colon => ":".to_owned(),
             Token::Semicolon => ";".to_owned(),
             Token::Bang => "!".to_owned(),
+            Token::Pipe => "|".to_owned(),
+            Token::And => "&".to_owned(),
             Token::Whitespace => panic!("TODO: Display whitespace?"),
             Token::OpenParen => "(".to_owned(),
             Token::CloseParen => ")".to_owned(),
@@ -258,6 +269,10 @@ impl<'input> Lexer<'input> {
                 Whitespace
             }
 
+            '@' => {
+                self.advance();
+                At
+            }
             '+' => {
                 self.advance();
                 Plus
@@ -299,9 +314,17 @@ impl<'input> Lexer<'input> {
                 self.advance();
                 Semicolon
             }
+            '&' => {
+                self.advance();
+                And
+            }
             '!' => {
                 self.advance();
                 Bang
+            }
+            '|' => {
+                self.advance();
+                Pipe
             }
             '(' => {
                 self.advance();
@@ -346,6 +369,23 @@ impl<'input> Lexer<'input> {
                 // NOTE: Could just treat everything as idents, then check those for keywords,
                 //       but this is much faster
                 match it {
+                    // enum
+                    'e' => {
+                        if self.is_next('n')? {
+                            self.advance();
+                            if self.is_next('u')? {
+                                self.advance();
+                                if self.is_next('m')? {
+                                    self.advance();
+                                    if !self.is_next_alphanumeric()? {
+                                        self.advance();
+                                        token = Some(Token::Keyword(self::Keyword::Enum));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     'f' => {
                         // fn
                         if self.is_next('n')? {
@@ -435,8 +475,22 @@ impl<'input> Lexer<'input> {
                         }
                     }
 
-                    // struct
                     's' => {
+                        // self
+                        if self.is_next('e')? {
+                            self.advance();
+                            if self.is_next('l')? {
+                                self.advance();
+                                if self.is_next('f')? {
+                                    self.advance();
+                                    if !self.is_next_alphanumeric()? {
+                                        self.advance();
+                                        token = Some(Token::Keyword(self::Keyword::Self_));
+                                    }
+                                }
+                            }
+                        }
+                        // struct
                         if self.is_next('t')? {
                             self.advance();
                             if self.is_next('r')? {
