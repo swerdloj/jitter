@@ -74,9 +74,9 @@ Even simple operators could become plugins such as the `apply` operator from `sd
 fn add(a: u32, b: u32) -> { a + b }
 fn custom(a: T, b: T) -> { a.field.do_something_with(b.field) }
 
-let sum = (1, 2, 3, 4, 5, 6, 9) <- add;
+let sum = add <- (1, 2, 3, 4, 5, 6, 9);
 // or
-let something = (a, b, c, d) <- custom
+let something = custom <- (a, b, c, d);
 ```
 generates
 ```Rust

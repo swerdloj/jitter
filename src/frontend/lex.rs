@@ -3,16 +3,18 @@
 
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
+    Enum,
+    For,
+    Fn,
+    Impl,
     Let,
     Mut,
-    Fn,
-    For,
-    Struct,
-    Enum,
+    Pub,
     Return,
-    Impl,
-    Trait,
     Self_,
+    Struct,
+    Trait,
+    Use,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
@@ -60,16 +62,18 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Ident(ident) => format!("identifier: {}", ident),
             Token::Keyword(keyword) => {
                 let word = match keyword {
+                    Keyword::Enum => "enum",
+                    Keyword::For => "for",
+                    Keyword::Fn => "fn",
+                    Keyword::Impl => "impl",
                     Keyword::Let => "let",
                     Keyword::Mut => "mut",
-                    Keyword::Fn => "fn",
-                    Keyword::For => "for",
-                    Keyword::Struct => "struct",
-                    Keyword::Enum => "enum",
+                    Keyword::Pub => "pub",
                     Keyword::Return => "return",
-                    Keyword::Impl => "impl",
-                    Keyword::Trait => "trait",
                     Keyword::Self_ => "self",
+                    Keyword::Struct => "struct",
+                    Keyword::Trait => "trait",
+                    Keyword::Use => "use",
                 };
                 format!("keyword: {}", word)
             },
@@ -452,6 +456,20 @@ impl<'input> Lexer<'input> {
                         }
                     }
 
+                    // pub
+                    'p' => {
+                        if self.is_next('u')? {
+                            self.advance();
+                            if self.is_next('b')? {
+                                self.advance();
+                                if !self.is_next_alphanumeric()? {
+                                    self.advance();
+                                    token = Some(Token::Keyword(self::Keyword::Pub));
+                                }
+                            }
+                        }
+                    }
+
                     // return
                     'r' => {
                         if self.is_next('e')? {
@@ -527,6 +545,20 @@ impl<'input> Lexer<'input> {
                                             token = Some(Token::Keyword(self::Keyword::Trait));
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // Use
+                    'u' => {
+                        if self.is_next('s')? {
+                            self.advance();
+                            if self.is_next('e')? {
+                                self.advance();
+                                if !self.is_next_alphanumeric()? {
+                                    self.advance();
+                                    token = Some(Token::Keyword(self::Keyword::Use));
                                 }
                             }
                         }

@@ -2,8 +2,8 @@
 // jitter!("./tests/integration_test.jitter");
 
 // TODO: This
-#[jitter::link]
-extern "jitter" {
+#[jitter::link] 
+extern {
     fn negate(v: i32) -> i32;
     fn identity(v: u32) -> u32;
 }
@@ -20,7 +20,14 @@ fn main() {
     let mut jit = jitter::create_local_context("./tests/integration_test.jitter");
 
     // TEMP: for testing -- eventually replace with #[jitter::link] usage above
-    let negate: fn(i32) -> i32 = unsafe { std::mem::transmute(jit.get_fn("negate")) };
+    let negate: fn(i32) -> i32 = unsafe { 
+        std::mem::transmute(jit.get_fn("negate")) 
+    };
 
-    println!("Result: {:?}", negate(1234560));
+    let multiply: fn(i32, i32) -> i32 = unsafe { 
+        std::mem::transmute(jit.get_fn("multiply")) 
+    };
+
+    println!("negate(1234560) = {:?}", negate(1234560));
+    println!("multiply(12, -7) = {:?}", multiply(12, -7));
 }

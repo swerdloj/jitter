@@ -108,6 +108,11 @@ impl<'a> Parser<'a> {
         match self.current_token() {
             Token::Keyword(keyword) => {
                 match keyword {
+                    Keyword::Use => {
+                        // TODO: This
+                        todo!("modules")
+                    }
+
                     Keyword::Fn => {
                         self.advance();
 
@@ -194,16 +199,17 @@ impl<'a> Parser<'a> {
                     // TODO: Need to prevent loop from eating an entire file
                     // let mut loop_count = 0;
                     loop {
+                        // Allows one comma after the final field
+                        if let Token::Comma = self.current_token() {
+                            parser_error!(self.file_path, self.current_span(), "Only one additional comma is allowed in tuples following the final parameter");
+                        }
+
                         tuple_types.push(self.parse_type());
 
-                        // FIXME: There is probably a better way to allow trailing comma
                         if self.current_token() == &Token::Comma {
                             self.advance();
-                            if self.current_token() == &Token::CloseParen {
-                                self.advance();
-                                break;
-                            }
-                        } else if self.current_token() == &Token::CloseParen {
+                        }
+                        if self.current_token() == &Token::CloseParen {
                             self.advance();
                             break;
                         }
@@ -655,15 +661,23 @@ impl<'a> Parser<'a> {
             }
 
             // TODO: `.` access, function calls
+            // FIXME: This needs to be refactored
             Token::Ident(ident) => {
                 self.advance();
+
+                // Check whether this is an assignment statement
+                let is_assignment = match self.current_token() {
+                    Token::Equals => true,
+                    Token::Plus | Token::Minus | Token::Asterisk | Token::Slash => {
+                        self.look_ahead(1) == &Token::Equals
+                    }
+
+                    _ => false,
+                };
+
                 match self.current_token() {
                     // x [+=, -=, *=, /=] expression
-                    Token::Equals
-                    | Token::Plus
-                    | Token::Minus 
-                    | Token::Asterisk
-                    | Token::Slash => {
+                    _ if is_assignment => {
                         let op_token = self.current();
 
                         // Special case (advance past the op in an op-assign)
@@ -675,12 +689,14 @@ impl<'a> Parser<'a> {
                             let op = ast::AssignmentOp::from_token(op_token);
 
                             statement = ast::Statement::Assign {
+                                // TODO: Replace `variable` with `expression`
                                 variable: ident,
                                 operator: Node::new(op, op_token.span.extend(*self.previous_span())),
                                 expression: self.parse_expression(),
                             };
                         } else {
-                            parser_error!(self.file_path, op_token.span, "Expected `{}=` to create an op-assign statement. Found `{}`", op_token.token, op_token.token);
+                            unreachable!() // confirmed this above for `is_assignment`
+                            // parser_error!(self.file_path, op_token.span, "Expected `{}=` to create an op-assign statement. Found `{}`", op_token.token, op_token.token);
                         }
                     }
 
@@ -693,9 +709,12 @@ impl<'a> Parser<'a> {
                     // NOTE: Current token is not a semicolon
                     // Found: `ident`
                     _ => {
+                        // FIXME: This is a hack that shouldn't be needed (needs refactor)
+                        *self.position.borrow_mut() -= 1;
+                        let expression = self.parse_expression();
                         // TODO: Ensure this is correct
                         statement = ast::Statement::ImplicitReturn {
-                            expression: Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
+                            expression, //Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
                             is_function_return: false,
                         };
 

@@ -64,6 +64,8 @@ impl JITContext {
         self.module.get_finalized_function(*func_id)
     }
 
+    // NOTE:
+    // All code represented by the validation context is assumed to be valid
     pub fn translate(&mut self, validation_context: crate::frontend::validate::context::Context) -> Result<(), String> {
         // TODO: Use validation context to declare all functions first
         // for function in &validation_context.functions {
@@ -163,7 +165,7 @@ impl JITContext {
     }
 }
 
-//// CLIF Translation ////
+//////////// CLIF Translation ////////////
 
 // Translates a function and its contents into IR
 struct FunctionTranslator<'a> {
@@ -285,20 +287,62 @@ impl FunctionTranslator<'_> {
     fn translate_expression(&mut self, expression: &ast::Expression) -> Result<Value, String> {
         let value = match expression {
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
-                todo!()
+                let l_value = self.translate_expression(lhs)?;
+                let r_value = self.translate_expression(rhs)?;
+
+                match op.item {
+                    ast::BinaryOp::Add => {
+                        if ty.is_integer() {
+                            self.fn_builder.ins().iadd(l_value, r_value)
+                        } else if ty.is_float() {
+                            self.fn_builder.ins().fadd(l_value, r_value)
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
+                    ast::BinaryOp::Subtract => {
+                        if ty.is_integer() {
+                            self.fn_builder.ins().isub(l_value, r_value)
+                        } else if ty.is_float() {
+                            self.fn_builder.ins().fsub(l_value, r_value)
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
+                    ast::BinaryOp::Multiply => {
+                        if ty.is_integer() {
+                            self.fn_builder.ins().imul(l_value, r_value)
+                        } else if ty.is_float() {
+                            self.fn_builder.ins().fmul(l_value, r_value)
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
+                    ast::BinaryOp::Divide => {
+                        todo!()
+                    }
+                }
             }
 
-            // TODO: Account for integer vs float
             ast::Expression::UnaryExpression { op, expr, ty } => {
+                let value = self.translate_expression(expr)?;
+
                 match op.item {
                     ast::UnaryOp::Negate => {
-                        let value = self.translate_expression(expr)?;
-                        // TEMP:
-                        self.fn_builder.ins().ineg(value)
+                        if ty.is_signed_integer() {
+                            self.fn_builder.ins().ineg(value)
+                        } else if ty.is_float() {
+                            self.fn_builder.ins().fneg(value)
+                        } else {
+                            unreachable!();
+                        }
                     }
 
                     ast::UnaryOp::Not => {
-                        todo!()
+                        self.fn_builder.ins().bnot(value)
                     }
                 }
             }

@@ -34,9 +34,16 @@ pub enum Type<'input> {
     usize,
     isize,
 
+    /// IEEE 754 32 bit float as used by C, Rust, and Cranelift
     f32,
+    /// IEEE 754 64 bit float as used by C, Rust, and Cranelift
     f64,
 
+    /// 8 bit boolean value:  
+    /// - `false` defaults to b00000000
+    /// - `true` defaults to  b11111111
+    /// - **Anything non-zero is considered `true`** for the purposes of codegen
+    ///    - Note, however, that as a user, you cannot create such booleans
     bool,
 
     /// `()` type
@@ -92,6 +99,8 @@ impl std::fmt::Display for Type<'_> {
                 // Remove trailing ", "
                 string.pop();
                 string.pop();
+                // Close the first parenthesis
+                string.push(')');
 
                 string
             },
@@ -135,6 +144,70 @@ impl<'input> Type<'input> {
         self == &Type::Unknown
     }
 
+    pub fn is_signed_integer(&self) -> bool {
+        match self {
+            Type::i8 
+            | Type::i16 
+            | Type::i32 
+            | Type::i64 
+            | Type::i128 
+            | Type::isize => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            Type::u8
+            | Type::u16
+            | Type::u32
+            | Type::u64
+            | Type::u128
+            | Type::i8
+            | Type::i16
+            | Type::i32
+            | Type::i64
+            | Type::i128
+            | Type::usize
+            | Type::isize
+            | Type::f32
+            | Type::f64 => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        match self {
+            Type::f32
+            | Type::f64 => true,
+            
+            _ => false,
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Type::u8
+            | Type::u16
+            | Type::u32
+            | Type::u64
+            | Type::u128
+            | Type::i8
+            | Type::i16
+            | Type::i32
+            | Type::i64
+            | Type::i128
+            | Type::usize
+            | Type::isize
+            | Type::f32
+            | Type::f64 => true,
+            
+            _ => false,
+        }
+    }
+
     // pub fn is_reference(&self) -> bool {
     //     if let Type::Reference {..} = self { true } else { false }
     // }
@@ -169,7 +242,7 @@ impl<'input> Type<'input> {
             Type::f32 => cranelift_types::F32,
             Type::f64 => cranelift_types::F64,
 
-            Type::bool => cranelift_types::B1,
+            Type::bool => cranelift_types::B8,
 
             // TODO: What to do about these?
             Type::Unit => cranelift_types::INVALID,

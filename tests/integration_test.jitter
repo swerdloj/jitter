@@ -41,9 +41,10 @@
 //     return test;
 // }
 
-// TODO: Operators
-// fn multiply(a: i32, b: i32) -> i32 {
-//     a * b
+// TODO: Modules
+// use libtest;
+// fn module_test() {
+//     libtest::pub_test();
 // }
 
 struct Test {
@@ -52,16 +53,16 @@ struct Test {
     c: u64,
 }
 
-fn negate(a: i32) -> i32 {
-    // immediate type inferrence
-    let x = -a;
 
-    // Implicit returns
-    x
+// TODO: Tuples
+// let y: (i32, u32);
+
+fn multiply(a: i32, b: i32) -> i32 {
+    a * b
 }
 
-fn identity(a: u32) -> u32 {
-    a
+fn negate(a: i32) -> i32 {
+    -a
 }
 
 // TODO: Infer literal types

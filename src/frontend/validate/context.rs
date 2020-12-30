@@ -57,25 +57,45 @@ impl<'input> TypeTable<'input> {
     }
 
     fn assert_valid(&mut self, t: &Type<'input>) -> Result<(), String> {
-        // Strip away references to check the underlying type
-        if let Type::Reference { ty, .. } = t {
-            return Ok(self.assert_valid(ty)?);
-        }
-        
-        if self.data.contains_key(t) {
-            Ok(())
-        } else {
-            Err(format!("Type `{}` is not valid", t))
+        match t {
+            // Strip away references to check the underlying type
+            Type::Reference { ty, .. } => Ok(self.assert_valid(ty)?),
+
+            // Check all contained types
+            Type::Tuple(types) => {
+                // TODO: All types can be checked (rather than stopping at first error)
+                //       Just store all errors, then build an error string
+                for ty in types {
+                    let result = self.assert_valid(ty);
+                    if result.is_err() {
+                        return result;
+                    }
+                }
+                Ok(())
+            }
+
+            // Base types
+            _ => {
+                if self.data.contains_key(t) {
+                    Ok(())
+                } else {
+                    Err(format!("Type `{}` is not valid", t))
+                }
+            }
         }
     }
 
     /// Returns alignment of the type in bytes
     fn alignment_of(&self, t: &Type) -> usize {
-        if let &Type::Reference {..} = t {
+        match t {
             // TODO: Alignment should be same as pointer type
-            todo!("need pointer type stuff");
+            Type::Reference { ty, .. } => todo!("need pointer type stuff"),
+            
+            // TODO: Tuples should align same as structs
+            Type::Tuple(types) => todo!("tuple alignment"),
+
+            _ => self.data.get(t).expect("alignment_of").alignment,
         }
-        self.data.get(t).expect("alignment_of").alignment
     }
 
     /// Returns the size of the type in bytes
@@ -85,7 +105,9 @@ impl<'input> TypeTable<'input> {
 }
 
 struct TypeTableEntry {
+    /// Size of type in bytes
     size: usize,
+    /// Alignment of type in bytes
     alignment: usize,
 }
 
@@ -422,21 +444,66 @@ impl<'a> Context<'a> {
         Ok(())
     }
 
+    // TODO: Make sure `ty` is assigned wherever needed
     /// Validates an expression, determining its type. Returns the type of the expression.
     pub fn validate_expression(&mut self, expression: &mut ast::Expression<'a>) -> Result<Type<'a>, String> {
         match expression {
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
-                todo!()
+                let l_type = self.validate_expression(lhs)?;
+                let r_type = self.validate_expression(rhs)?;
+                self.types.assert_valid(&l_type)?;
+                self.types.assert_valid(&r_type)?;
+
+                match op.item {
+                    ast::BinaryOp::Add => {
+                        todo!()
+                    }
+
+                    ast::BinaryOp::Subtract => {
+                        todo!()
+                    }
+
+                    ast::BinaryOp::Multiply => {
+                        // Primitive numeric types can be multiplied together
+                        if l_type.is_numeric() && (r_type == l_type) {
+                            // l/r_type is arbitrary here
+                            *ty = r_type;
+                            Ok(l_type)
+                        } else {
+                            todo!("Convert `*` to `std::ops::multiply(LType, RType)` call")
+                        }
+                    }
+
+                    ast::BinaryOp::Divide => {
+                        todo!()
+                    }
+                }
             }
 
             ast::Expression::UnaryExpression { op, expr, ty } => {
                 let expr_type = self.validate_expression(expr)?;
-                // TODO: this
-                // todo!()
-
                 self.types.assert_valid(&expr_type)?;
-                // TEMP:
-                Ok(expr_type)
+                
+                // TODO: this
+                match op.item {
+                    ast::UnaryOp::Negate => {
+                        if expr_type.is_signed_integer() || expr_type.is_float() {
+                            *ty = expr_type.clone();
+                            Ok(expr_type)
+                        } else {
+                            todo!("Convert `-` to `std::ops::negate(T)` call");
+                        }
+                    }
+
+                    ast::UnaryOp::Not => {
+                        // If not boolean, then must convert to `std::op`
+                        if expr_type == Type::bool {
+                            Ok(expr_type)
+                        } else {
+                            todo!("Convert `!` to `std::ops::not(T)` call");
+                        }
+                    }
+                }
             }
 
             // Recursively determine the type of the expression (and thus all nested expressions)

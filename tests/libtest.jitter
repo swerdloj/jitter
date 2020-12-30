@@ -1,0 +1,43 @@
+/*
+
+Testing library functionality:
+
+    public/private,
+    imports,
+    namespaces,
+    ect.
+
+*/
+
+pub struct PubStruct {
+    pub public: u32,
+    private: u32,
+}
+
+pub fn pub_test() -> u32 {
+    7
+}
+
+fn priv_test() -> u32 {
+    12
+}
+
+// pub trait Add<Rhs, Output> {
+//     fn add(self, rhs: Rhs) -> Output;
+// }
+
+// impl Add<u32, u32> for u32 {
+//     fn add(self, rhs: u32) -> u32 {
+//         self + rhs
+//     }
+// }
+
+// pub trait Negate<Output> {
+//     fn negate(self) -> Output;
+// }
+
+// impl Negate<i32> for i32 {
+//     fn negate(self) -> i32 {
+//         0 - rhs
+//     }
+// }

@@ -8,16 +8,18 @@ _1test
 test1_
 
 // keywords
+enum
+for
+fn
+impl
 let
 mut
-fn
-for
-struct
-enum
+pub 
 return
-impl
-trait
 self
+struct
+trait
+use
 
 // symbols
 @ - + * / = < > , : ; & ! | ( ) { } [ ]
