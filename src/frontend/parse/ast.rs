@@ -148,10 +148,16 @@ pub enum Expression<'input> {
         ty: Type<'input>,
     },
 
-    Parenthesized {
-        expr: Box<Node<Expression<'input>>>,
-        ty: Type<'input>,
+    // Constructor for a type with fields
+    FieldConstructor {
+        // Name of type
+        type_name: &'input str,
+        // Map of (field_name -> value)
+        fields: std::collections::HashMap<&'input str, Node<Expression<'input>>>,
     },
+
+    // TODO: Can this be removed entirely? Doesn't do anything other than when parsing
+    Parenthesized(Box<Node<Expression<'input>>>),
 
     Block(BlockExpression<'input>),
 

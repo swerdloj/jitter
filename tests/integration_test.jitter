@@ -53,6 +53,13 @@ struct Test {
     c: u64,
 }
 
+fn struct_test(a: u8, b: u16, c: u64) {
+    Test {
+        a,
+        b: b,
+        c,
+    };
+}
 
 // TODO: Tuples
 // let y: (i32, u32);

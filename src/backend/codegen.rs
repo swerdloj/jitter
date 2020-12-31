@@ -347,12 +347,16 @@ impl FunctionTranslator<'_> {
                 }
             }
 
+            ast::Expression::FieldConstructor { type_name, fields } => {
+                todo!()
+            }
+
             ast::Expression::Block(block) => {
                 todo!()
             }
 
-            // FIXME: Is this correct? Do parentheses only matter during parsing?
-            ast::Expression::Parenthesized { expr, .. } => {
+            // Parentheses only matter during parsing
+            ast::Expression::Parenthesized (expr) => {
                 self.translate_expression(expr)?
             }
 

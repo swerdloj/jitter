@@ -201,15 +201,15 @@ impl<'a> Parser<'a> {
                     loop {
                         // Allows one comma after the final field
                         if let Token::Comma = self.current_token() {
-                            parser_error!(self.file_path, self.current_span(), "Only one additional comma is allowed in tuples following the final parameter");
+                            parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed in tuples following the final parameter");
                         }
 
                         tuple_types.push(self.parse_type());
 
-                        if self.current_token() == &Token::Comma {
+                        if let Token::Comma = self.current_token() {
                             self.advance();
                         }
-                        if self.current_token() == &Token::CloseParen {
+                        if let Token::CloseParen = self.current_token() {
                             self.advance();
                             break;
                         }
@@ -533,7 +533,7 @@ impl<'a> Parser<'a> {
 
             // Allows one comma after the final field
             if let Token::Comma = self.current_token() {
-                parser_error!(self.file_path, self.current_span(), "Only one additional comma is allowed in function parameters following the final parameter");
+                parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed in function parameters following the final parameter");
             }
 
             if let Token::Keyword(Keyword::Mut) = self.current_token() {
@@ -712,13 +712,19 @@ impl<'a> Parser<'a> {
                         // FIXME: This is a hack that shouldn't be needed (needs refactor)
                         *self.position.borrow_mut() -= 1;
                         let expression = self.parse_expression();
-                        // TODO: Ensure this is correct
-                        statement = ast::Statement::ImplicitReturn {
-                            expression, //Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
-                            is_function_return: false,
+
+                        statement = if let Token::Semicolon = self.current_token() {
+                            ast::Statement::Expression(expression)
+                        } else {
+                            needs_semicolon = false;
+
+                            // TODO: Ensure this is correct
+                            ast::Statement::ImplicitReturn {
+                                expression, //Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
+                                is_function_return: false,
+                            }
                         };
 
-                        needs_semicolon = false;
                     }
                 }
             }
@@ -897,10 +903,9 @@ impl<'a> Parser<'a> {
             // ( expression )
             Token::OpenParen => {
                 self.advance();
-                expression = ast::Expression::Parenthesized {
-                    expr: Box::new(self.parse_expression()),
-                    ty: Type::Unknown,
-                };
+                expression = ast::Expression::Parenthesized(
+                    Box::new(self.parse_expression()),
+                );
                 if let Token::CloseParen = self.current_token() {
                     self.advance();
                 } else {
@@ -915,10 +920,18 @@ impl<'a> Parser<'a> {
                 expression = ast::Expression::Literal(ast::Literal::Integer(*number));
             }
 
-            // Identifier
+            // Identifier or Constructor
             Token::Ident(ident) => {
                 self.advance();
-                expression = ast::Expression::Ident(ident);
+
+                // FieldConstructor
+                if let Token::OpenCurlyBrace = self.current_token() {
+                    expression = self.parse_field_constructor(ident);
+                }
+                // Just an identifier
+                else { 
+                    expression = ast::Expression::Ident(ident);
+                }
             }
 
             _ => {
@@ -927,5 +940,58 @@ impl<'a> Parser<'a> {
         }
 
         Node::new(expression, start.extend(*self.previous_span()))
+    }
+
+    // Helper function -- separated for readability/complexity
+    // Note that FieldConstructor is an expression
+    fn parse_field_constructor(&self, ident: &'a str) -> ast::Expression {
+        self.advance();
+        let mut fields = std::collections::HashMap::new();
+
+        loop {
+            if let Token::Comma = self.current_token() {
+                parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed in field constructors following the final parameter");
+            }
+            
+            if let Token::Ident(field_name) = self.current_token() {
+                self.advance();
+                
+                // Get the assignment either by ident shorthand or by `field: value`
+                let field_assignment = if let Token::Colon = self.current_token() {
+                    self.advance();
+                    self.parse_expression()
+                }
+                // Shorthand by identifier
+                else if (self.current_token() == &Token::Comma) || (self.current_token() == &Token::CloseCurlyBrace) {
+                    Node::new(
+                        ast::Expression::Ident(field_name),
+                        // Span of the ident token
+                        *self.previous_span()
+                    )    
+                } else {
+                    parser_error!(self.file_path, self.current_span(), "Expected `:` after field name. Found {}", self.current_token());
+                };
+
+                fields.insert(*field_name, field_assignment)
+                    .map(|_existing| {
+                        parser_error!(self.file_path, self.current_span(), "Field `{}` was already defined", self.current_token());
+                    });
+            } else {
+                parser_error!(self.file_path, self.current_span(), "Expected field name identifier. Found {}", self.current_token());
+            }
+
+            if let Token::Comma = self.current_token() {
+                self.advance();
+            }
+            if let Token::CloseCurlyBrace = self.current_token() {
+                self.advance();
+                break;
+            }
+        }
+
+        ast::Expression::FieldConstructor {
+            type_name: ident,
+            fields,
+        }
     }
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, todo};
+use std::collections::{HashMap, HashSet};
 
 use crate::frontend::parse::ast;
 
@@ -10,6 +10,19 @@ use super::types::Type;
 struct StructDefinition<'input> {
     /// Map of field_name -> (type, byte offset)
     fields: HashMap<&'input str, (Type<'input>, usize)>,
+}
+
+struct TypeTableEntry {
+    /// Size of type in bytes
+    size: usize,
+    /// Alignment of type in bytes
+    alignment: usize,
+}
+
+impl TypeTableEntry {
+    fn new(size: usize, alignment: usize) -> Self {
+        Self { size, alignment }
+    }
 }
 
 /// Stores type sizes and alignments
@@ -56,7 +69,7 @@ impl<'input> TypeTable<'input> {
         }
     }
 
-    fn assert_valid(&mut self, t: &Type<'input>) -> Result<(), String> {
+    fn assert_valid(&self, t: &Type<'input>) -> Result<(), String> {
         match t {
             // Strip away references to check the underlying type
             Type::Reference { ty, .. } => Ok(self.assert_valid(ty)?),
@@ -101,19 +114,6 @@ impl<'input> TypeTable<'input> {
     /// Returns the size of the type in bytes
     fn size_of(&self, t: &Type) -> usize {
         self.data.get(t).unwrap().size
-    }
-}
-
-struct TypeTableEntry {
-    /// Size of type in bytes
-    size: usize,
-    /// Alignment of type in bytes
-    alignment: usize,
-}
-
-impl TypeTableEntry {
-    fn new(size: usize, alignment: usize) -> Self {
-        Self { size, alignment }
     }
 }
 
@@ -506,10 +506,58 @@ impl<'a> Context<'a> {
                 }
             }
 
-            // Recursively determine the type of the expression (and thus all nested expressions)
-            ast::Expression::Parenthesized { expr, ty } => {
-                *ty = self.validate_expression(expr)?;
-                Ok(ty.clone())
+            // Ensure that all fields are filled and that valid types are used
+            ast::Expression::FieldConstructor { type_name, fields } => {
+                let target_type = Type::User(type_name);
+                self.types.assert_valid(&target_type)?;
+
+                let mut required_fields = HashSet::new();
+                
+                // FIXME: A few hacks to avoid immutable + mutable borrow
+                {
+                    let struct_definition = self.structs.get(type_name)
+                        .ok_or(format!("No type `{}` compatible with field constructor", type_name))?;
+
+                    // Note the required fields
+                    for field in struct_definition.fields.keys() {
+                        required_fields.insert(*field);
+                    }
+                }
+
+                // Check each assigned field/value with the expected fields/values
+                for (field_name, expr) in fields {
+                    // FIXME: Another (not terrible) hack to satisfy borrows
+                    let (field_type, _) = self.structs.get(type_name).unwrap().fields.get(field_name)
+                        .ok_or(format!("Type `{}` has no field `{}`", type_name, field_name))?.clone();
+                    
+                    // Required field is accounted for
+                    required_fields.remove(field_name);
+
+                    let assigned_type = self.validate_expression(expr)?;
+                    if assigned_type != field_type {
+                        return Err(format!("Field `{}.{}` is of type `{}`, but found type `{}`", type_name, field_name, field_type, assigned_type));
+                    }
+                }
+
+                // Error if any fields are missing
+                if required_fields.len() > 0 {
+                    // FIXME: Can't use newlines here?
+                    let mut error = format!("Constructor for type `{}` is missing fields: ", type_name);
+                    for missing in required_fields {
+                        error.push_str(&format!("`{}`, ", missing));
+                    }
+                    // Remove trailing ", "
+                    error.pop();
+                    error.pop();
+                    return Err(error);
+                }
+
+                Ok(target_type)
+            }
+
+            // Parenthesis only exist to help build the AST. Technically, they provide no other purpose
+            ast::Expression::Parenthesized(expr) => {
+                self.validate_expression(expr)
             }
 
             ast::Expression::Block(block) => {
