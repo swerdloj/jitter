@@ -3,7 +3,7 @@ pub mod ast;
 pub(self) use super::lex; // for convenience
 
 use crate::Span;
-use ast::Node;
+use ast::{Literal, Node};
 use lex::{Token, SpannedToken, Keyword};
 use crate::frontend::validate::types::Type;
 
@@ -650,7 +650,11 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let expression = if let Token::Semicolon = self.current_token() {
                     // there is no expression -> return value is `()`
-                    Node::new(ast::Expression::Literal(ast::Literal::UnitType), *self.previous_span())
+                    let unit_return = ast::Expression::Literal {
+                        value: ast::Literal::UnitType,
+                        ty: Type::Unit,
+                    };
+                    Node::new(unit_return, *self.previous_span())
                 } else {
                     self.parse_expression()
                 };
@@ -789,8 +793,9 @@ impl<'a> Parser<'a> {
         Node::new(block_expression, start.extend(*self.previous_span()))
     }
 
-    //////////////// ONLY EXPRESSIONS BELOW THIS LINE ////////////////
-    ////////// Precedence: Lowest at top, highest at bottom //////////
+    ////////////////// ONLY EXPRESSIONS BELOW HERE ///////////////////
+    ////////// Precedence: lowest at top, highest at bottom //////////
+    ////////// Helper functions go after base_expression    //////////
 
     // Employs recursive descent
     fn parse_expression(&self) -> Node<ast::Expression> {
@@ -866,11 +871,17 @@ impl<'a> Parser<'a> {
         match self.current_token() {
             Token::Minus => {
                 self.advance();
-                expression = ast::Expression::UnaryExpression {
-                    op: Node::new(ast::UnaryOp::Negate, *self.previous_span()),
-                    expr: Box::new(self.parse_expression()),
-                    ty: Type::Unknown,
-                };
+                
+                // TODO: If next token is number, return negative literal
+                if let Token::Number(number) = self.current_token() {
+                    expression = self.parse_numeric_literal(number, true);
+                } else {   
+                    expression = ast::Expression::UnaryExpression {
+                        op: Node::new(ast::UnaryOp::Negate, *self.previous_span()),
+                        expr: Box::new(self.parse_expression()),
+                        ty: Type::Unknown,
+                    };
+                }
             }
 
             Token::Bang => {
@@ -942,21 +953,21 @@ impl<'a> Parser<'a> {
             // ( expression )
             Token::OpenParen => {
                 self.advance();
-                expression = ast::Expression::Parenthesized(
-                    Box::new(self.parse_expression()),
-                );
+
+                // TODO: Make sure nothing broke with `Expression::Parenthesized` gone
+
+                let inner = self.parse_expression();
                 if let Token::CloseParen = self.current_token() {
                     self.advance();
                 } else {
                     parser_error!(self.file_path, self.current_span(), "Expected ')' to end parenthesized expression. Found `{}`", self.current_token());
                 }
+                return inner;
             }
 
-            // TODO: Differentiate integers and floats
             // Numeric literal
             Token::Number(number) => {
-                self.advance();
-                expression = ast::Expression::Literal(ast::Literal::Integer(*number));
+                expression = self.parse_numeric_literal(number, false);
             }
 
             // Identifier or Constructor
@@ -969,7 +980,10 @@ impl<'a> Parser<'a> {
                 }
                 // Just an identifier
                 else { 
-                    expression = ast::Expression::Ident(ident);
+                    expression = ast::Expression::Ident {
+                        name: ident,
+                        ty: Type::Unknown,
+                    };
                 }
             }
 
@@ -979,6 +993,77 @@ impl<'a> Parser<'a> {
         }
 
         Node::new(expression, start.extend(*self.previous_span()))
+    }
+
+    //////////////////// EXPRESSION HELPER FUNCTIONS ////////////////////
+
+    fn parse_numeric_literal(&self, number: &usize, negative: bool) -> ast::Expression {
+        self.advance();
+
+        // `#.` -> Floating point number
+        if let Token::Dot = self.current_token() {
+            self.advance();
+            let mut float: f64 = if let Token::Number(decimal) = self.current_token() {
+                self.advance();
+                // `#.#`
+                format!("{}.{}", number, decimal).parse().expect("parse float")
+            } else {
+                // `#.` -> `#.0`
+                format!("{}.0", number).parse().expect("parse float no decimal")
+            };
+
+            if negative {
+                float = -float;
+            }
+
+            // `#.#type`
+            let ty = if let Token::Ident(type_specifier) = self.current_token() {
+                self.advance();
+                let float_type = Type::resolve_builtin(type_specifier);
+                if !float_type.is_float() {
+                    parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid floating-point type specifier", type_specifier);
+                }
+
+                float_type
+            } else {
+                Type::Unknown
+            };
+
+            ast::Expression::Literal {
+                value: Literal::Float(float),
+                ty,
+            }
+        }
+        // No decimal -> Integer
+        else {
+            let mut integer: isize = number.to_string().parse().expect("parse integer");
+
+            if negative {
+                integer = -integer;
+            }
+
+            let ty = if let Token::Ident(type_specifier) = self.current_token() {
+                self.advance();
+                let integer_type = Type::resolve_builtin(type_specifier);
+                if !integer_type.is_integer() {
+                    parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid integer type specifier", type_specifier);
+                }
+                
+                // Only signed integers can be negative
+                if negative && !integer_type.is_signed_integer() {
+                    parser_error!(self.file_path, self.previous_span(), "Only signed types can be negative (got unsigned type, `{}`)", type_specifier);
+                }
+
+                integer_type
+            } else {
+                Type::Unknown
+            };
+
+            ast::Expression::Literal {
+                value: Literal::Integer(integer),
+                ty,
+            }
+        }
     }
 
     // Helper function -- separated for readability/complexity
@@ -1003,7 +1088,10 @@ impl<'a> Parser<'a> {
                 // Shorthand by identifier
                 else if (self.current_token() == &Token::Comma) || (self.current_token() == &Token::CloseCurlyBrace) {
                     Node::new(
-                        ast::Expression::Ident(field_name),
+                        ast::Expression::Ident { 
+                            name: field_name,
+                            ty: Type::Unknown,
+                        },
                         // Span of the ident token
                         *self.previous_span()
                     )    

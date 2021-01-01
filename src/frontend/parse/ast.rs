@@ -148,7 +148,7 @@ pub enum Expression<'input> {
         ty: Type<'input>,
     },
 
-    // Constructor for a type with fields
+    /// Constructor for a type with fields
     FieldConstructor {
         // Name of type
         type_name: &'input str,
@@ -156,9 +156,13 @@ pub enum Expression<'input> {
         fields: std::collections::HashMap<&'input str, Node<Expression<'input>>>,
     },
 
+    /// Accessing a field of a type
     FieldAccess {
+        /// The `lhs` of `lhs.field`
         base_expr: Box<Node<Expression<'input>>>,
+        /// The field identifier being used
         field: &'input str,
+        /// The type of this FieldAccess (the field's type)
         ty: Type<'input>,
     },
 
@@ -171,14 +175,17 @@ pub enum Expression<'input> {
         inputs: Vec<Node<Expression<'input>>>,
     },
 
-    // TODO: Can this be removed entirely? Doesn't do anything other than when parsing
-    Parenthesized(Box<Node<Expression<'input>>>),
-
     Block(BlockExpression<'input>),
 
-    // TODO: Do these need type fields?
-    Literal(Literal),
-    Ident(&'input str),
+    Literal { 
+        value: Literal,
+        ty: Type<'input>,
+    },
+
+    Ident {
+        name: &'input str,
+        ty: Type<'input>,
+    },
 }
 
 #[derive(Debug)]
@@ -190,7 +197,7 @@ pub struct BlockExpression<'input> {
 #[derive(Debug)]
 pub enum Literal {
     /// Integer of any type
-    Integer(usize),
+    Integer(isize),
     /// Floating point number of any type
     Float(f64),
     /// `()` type

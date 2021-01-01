@@ -5,6 +5,7 @@
 
 use crate::frontend::parse::ast;
 use crate::frontend::validate::context::Context as ValidationContext;
+use crate::frontend::validate::types::Type as CompilerType;
 
 use cranelift::prelude::*;
 use cranelift_module::{Module, Linkage, DataContext};
@@ -204,16 +205,15 @@ impl FunctionTranslator<'_> {
         // Declare the function's return Variable
         let return_var = self.variables.create_var("return".to_owned());
         self.fn_builder.declare_var(return_var, return_type);
+
+        // TODO: If function returns a user type, need to allocate
+        //       a `StructReturnSlot`, then store the type data into that
+        //       `StackSlot`
         
         for statement in &function.body.block.item {
             self.translate_statement(statement)?;
         }
-        
-        // Return nothing if function has no return type
-        if return_type == types::INVALID {
-            self.fn_builder.ins().return_(&[]);
-        }
-        
+               
         self.fn_builder.finalize();
         
         // TEMP: debug
@@ -238,28 +238,20 @@ impl FunctionTranslator<'_> {
             // Create a new variable and assign it if an expression is given
             ast::Statement::Let { ident, mutable, ty, value } => {
                 let var = self.variables.create_var(*ident);
-                
-                // Allocate stack slot if type is not an IR type
+
+                // Stack-allocated types are just memory addresses
                 if ty.is_builtin() {
                     self.fn_builder.declare_var(
                         var,
                         ty.ir_type(&self.pointer_type)
                     );
-
-                    if let Some(expr) = value {
-                        let assigned_value = self.translate_expression(expr)?;
-                        self.fn_builder.def_var(var, assigned_value);
-                    }
                 } else {
-                    let bytes_needed = self.validation_context.types.size_of(ty);
-                    // FIXME: Casting usize to u32 here is (potentially) bad
-                    let stack_slot = self.allocate_explicit_stack_data(bytes_needed as u32);
-                    self.variables.register_stack_slot(*ident, stack_slot);
-                    
-                    // TODO: Fill stack slot with data
-                    if let Some(expr) = value {
-                        todo!()
-                    }
+                    self.fn_builder.declare_var(var, *self.pointer_type);
+                }
+
+                if let Some(expr) = value {
+                    let assigned_value = self.translate_expression(expr)?;
+                    self.fn_builder.def_var(var, assigned_value);
                 }
             }
             
@@ -373,12 +365,43 @@ impl FunctionTranslator<'_> {
                 }
             }
 
+            // Any type created by constructor is allocated on the stack
             ast::Expression::FieldConstructor { type_name, fields } => {
-                todo!()
+                let type_ = CompilerType::User(type_name);
+                let type_size = self.validation_context.types.size_of(&type_) as u32;
+                
+                // Allocate the type on the stack and get its address
+                let stack_slot = self.allocate_explicit_stack_data(type_size);
+                let stack_address = self.fn_builder.ins().stack_addr(
+                    *self.pointer_type, 
+                    stack_slot, 
+                    0
+                );
+
+                // TODO: Do not allocate extra slot for nested types
+                for (field, expr) in fields {
+                    let field_value = self.translate_expression(expr)?;
+                    let field_offset = self.validation_context.get_field_offset(&type_, field)? as i32;
+                    self.fn_builder.ins().stack_store(field_value, stack_slot, field_offset);
+                }
+
+                self.variables.register_stack_slot(stack_address, stack_slot);
+
+                stack_address
             }
 
             ast::Expression::FieldAccess { base_expr, field, ty  } => {
-                todo!()
+                let stack_address = self.translate_expression(base_expr)?;
+                let stack_slot = self.variables.get_stack_slot(&stack_address)?;
+                let base_type = self.validation_context.get_expression_type(base_expr)?;
+                let offset = self.validation_context.get_field_offset(&base_type, field)?;
+
+                // FIXME: Narrowing cast
+                self.fn_builder.ins().stack_load(
+                    ty.ir_type(&self.pointer_type), 
+                    *stack_slot, 
+                    offset as i32,
+                )
             }
 
             ast::Expression::FunctionCall { function, inputs } => {
@@ -389,24 +412,30 @@ impl FunctionTranslator<'_> {
                 todo!()
             }
 
-            // Parentheses only matter during parsing
-            ast::Expression::Parenthesized (expr) => {
-                self.translate_expression(expr)?
-            }
-
-            ast::Expression::Literal(literal) => {
-                match literal {
-                    ast::Literal::Integer(_) => {}
-                    ast::Literal::Float(_) => {}
-                    ast::Literal::UnitType => {}
-                }
-
-                todo!()
+            ast::Expression::Literal{ value, ty } => {
+                match value {
+                    ast::Literal::Integer(integer) => {
+                        // FIXME: Narrowing cast
+                        self.fn_builder.ins().iconst(ty.ir_type(self.pointer_type), *integer as i64)
+                    }
+                    ast::Literal::Float(float) => {
+                        match ty {
+                            // FIXME: Narrowing cast
+                            CompilerType::f32 => self.fn_builder.ins().f32const(*float as f32),
+                            CompilerType::f64 => self.fn_builder.ins().f64const(*float),
+                            
+                            _ => unreachable!(),
+                        }
+                    }
+                    ast::Literal::UnitType => {
+                        todo!()
+                    }
+                }                
             }
             
             // Get IR reference to the variable
-            ast::Expression::Ident(ident) => {
-                let var = self.variables.get_var(ident)?;
+            ast::Expression::Ident { name, ty } => {
+                let var = self.variables.get_var(name)?;
                 self.fn_builder.use_var(*var)
             }
         };

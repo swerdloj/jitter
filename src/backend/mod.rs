@@ -37,8 +37,9 @@ use cranelift::codegen::ir::StackSlot;
 pub struct VarMap {
     /// IR compatible types are allocated as `Variable`s
     variables: HashMap<String, Variable>,
-    /// Custom types (e.g.: user-defined) require explicit allocations
-    stack_slots: HashMap<String, StackSlot>,
+    /// Custom types (e.g.: user-defined) require explicit allocations.  
+    /// This is a map of (address -> slot)
+    stack_slots: HashMap<Value, StackSlot>,
     /// Each variable requires a unique index
     index: usize,
 }
@@ -62,12 +63,17 @@ impl VarMap {
         var
     }
 
-    pub fn register_stack_slot(&mut self, name: impl Into<String>, slot: StackSlot) {
-        self.stack_slots.insert(name.into(), slot);
-    }
-
     pub fn get_var(&self, name: &str) -> Result<&Variable, String> {
         self.variables.get(name)
-            .ok_or("Variable `{}` does not exist".to_owned())
+            .ok_or(format!("Variable `{}` does not exist", name))
+    }
+
+    pub fn register_stack_slot(&mut self, address: Value, slot: StackSlot) {
+        self.stack_slots.insert(address, slot);
+    }
+
+    pub fn get_stack_slot(&mut self, address: &Value) -> Result<&StackSlot, String> {
+        self.stack_slots.get(address)
+            .ok_or(format!("Address `{}` not found", address))
     }
 }

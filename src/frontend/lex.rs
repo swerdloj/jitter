@@ -597,12 +597,10 @@ impl<'input> Lexer<'input> {
                 let from = self.position;
 
                 while let Ok(next) = self.peek_next() {
-                    if next.is_digit(10) {
+                    // Underscores are allowed in numbers
+                    if next.is_digit(10) || next == '_' {
                         self.advance();
-                    } else if next.is_ascii_alphabetic() || next == '_' {
-                        // TODO: Allow underscores after numbers
-                        return Err(format!("{}:{}:{}: Invalid input: letter or underscore following a number", self.file_path, self.current_line, self.current_column));
-                    } else {
+                    } else if !next.is_digit(10) {
                         break;
                     }
                 }
@@ -611,8 +609,8 @@ impl<'input> Lexer<'input> {
 
                 self.advance();
 
-                // FIXME: There must be a better way to do this
-                Number(self.input[from..=to].to_owned().parse().unwrap())
+                // Remove underscores, then parse
+                Number(self.input[from..=to].to_owned().replace("_", "").parse().unwrap())
             }
 
             // TODO: Read all invalid characters in a row and return only one error for such cases

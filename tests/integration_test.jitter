@@ -48,19 +48,32 @@
 // }
 
 struct Test {
-    a: u8,
+    a: i8,
     b: u16,
-    c: u64,
+    c: u16,
 }
 
-fn struct_test(a: u8, b: u16, c: u64) {
+// TODO: Custom type returns
+// fn FFI_test(a: u8, b: u16, c: u16) -> Test {
+//     Test { a, b, c }
+// }
+
+fn specified_literals() -> i8 {
+    Test {
+        a: -16_i8,
+        b: 123u16,
+        c: 3___2_1____u16,
+    }.a
+}
+
+fn struct_test(a: i8, b: u16, c: u16) -> u16 {
     let x = Test {
         a,
-        b: b,
+        b,
         c,
     };
 
-    x.a.b.c;
+    (x.b + x.c) * b
 }
 
 // TODO: Tuples

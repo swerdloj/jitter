@@ -11,7 +11,11 @@ mod tests {
     fn nodes() {
         use ast::*;
 
-        let child = Expression::Literal(Literal::Integer(7));
+        let child = Expression::Literal { 
+            value: Literal::Integer(7),
+            ty: Type::i32,
+        };
+
         let child_node = Node::new(child, Span::new(0, 0, 0, 0));
 
         let parent = Expression::UnaryExpression {
@@ -48,11 +52,32 @@ mod tests {
             .collect::<Vec<Token>>();
 
         let expected = vec![
+            // Numbers
             Token::Number(1230),
+
+            Token::Number(321),
+
+            Token::Number(123),
+            Token::Dot,
+            Token::Number(456),
+
+            Token::Number(99),
+            Token::Dot,
+            Token::Number(78),
+
+            Token::Number(10),
+            Token::Dot,
+            Token::Number(88),
+            Token::Ident("f32"),
+
+            Token::Number(100),
+            Token::Ident("usize"),
+            // Identifiers
             Token::Ident("ident"),
             Token::Ident("_0_1"),
             Token::Ident("_1test"),
             Token::Ident("test1_"),
+            // Keywords
             Token::Keyword(Keyword::Enum),
             Token::Keyword(Keyword::For),
             Token::Keyword(Keyword::Fn),
@@ -65,6 +90,7 @@ mod tests {
             Token::Keyword(Keyword::Struct),
             Token::Keyword(Keyword::Trait),
             Token::Keyword(Keyword::Use),
+            // Symbols
             Token::At,
             Token::Minus,
             Token::Plus,

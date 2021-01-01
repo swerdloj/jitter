@@ -5,7 +5,8 @@ use cranelift::codegen::ir::types as cranelift_types;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum Type<'input> {
-    // &T or &mut T
+    /// Pointer to a memory location (TODO: Stack only?)  
+    /// `&T` or `&mut T`
     Reference {
         ty: Box<Type<'input>>,
         mutable: bool,
@@ -19,19 +20,31 @@ pub enum Type<'input> {
     //     mutable: bool,
     // },
 
+    /// 8-bit unsigned integer
     u8,
+    /// 16-bit unsigned integer
     u16,
+    /// 32-bit unsigned integer
     u32,
+    /// 64-bit unsigned integer
     u64,
+    /// 128-bit unsigned integer
     u128,
 
+    /// 8-bit signed integer
     i8,
+    /// 16-bit signed integer
     i16,
+    /// 32-bit signed integer
     i32,
+    /// 64-bit signed integer
     i64,
+    /// 128-bit signed integer
     i128,
 
+    /// Architectural word size (unsigned)
     usize,
+    /// Architectural word size (signed)
     isize,
 
     /// IEEE 754 32 bit float as used by C, Rust, and Cranelift
@@ -61,7 +74,7 @@ pub enum Type<'input> {
     /// Name of a struct, enum, alias, etc.
     User(&'input str),
 
-    /// Unspecified and uninferred type 
+    /// Unspecified and uninferred type
     Unknown,
 }
 
@@ -183,7 +196,7 @@ impl<'input> Type<'input> {
     pub fn is_builtin(&self) -> bool {
         match self {
             Type::User(_)
-            | Type::Tuple(_) => true,
+            | Type::Tuple(_) => false,
 
             _ => true,
         }
@@ -215,9 +228,7 @@ impl<'input> Type<'input> {
             | Type::i64
             | Type::i128
             | Type::usize
-            | Type::isize
-            | Type::f32
-            | Type::f64 => true,
+            | Type::isize => true,
 
             _ => false,
         }

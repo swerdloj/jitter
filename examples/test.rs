@@ -14,6 +14,13 @@ fn from_rust() {
     println!("From Rust code");
 }
 
+#[derive(Debug)]
+#[repr(C)]
+struct JitterStruct {
+    a: u8,
+    b: u16,
+    c: u16,
+}
 
 fn main() {
     // TODO: growable environment (REPL-style) / hot-reloading
@@ -28,6 +35,23 @@ fn main() {
         std::mem::transmute(jit.get_fn("multiply")) 
     };
 
+    let struct_test: fn(u8, u16, u16) -> u16 = unsafe { 
+        std::mem::transmute(jit.get_fn("struct_test")) 
+    };
+
+    let specified_literals: fn() -> i8 = unsafe { 
+        std::mem::transmute(jit.get_fn("specified_literals")) 
+    };
+
+    // TODO: Return stack allocations
+    // #[allow(non_snake_case)]
+    // let FFI_test: fn(u8, u16, u16) -> JitterStruct = unsafe { 
+    //     std::mem::transmute(jit.get_fn("FFI_test")) 
+    // };
+
     println!("negate(1234560) = {:?}", negate(1234560));
     println!("multiply(12, -7) = {:?}", multiply(12, -7));
+    println!("struct_test(1, 2, 3) = {:?}", struct_test(1, 2, 3));
+    println!("specified_literals() = {:?}", specified_literals());
+    // println!("FFI_test(10, 21, 39) = {:?}", FFI_test(10, 29, 31));
 }

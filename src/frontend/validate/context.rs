@@ -17,6 +17,8 @@ pub struct TypeTableEntry {
     pub size: usize,
     /// Alignment of type in bytes
     alignment: usize,
+    // TODO: Store fields and their offsets here too
+    // field_offets: HashMap<?>,
 }
 
 impl TypeTableEntry {
@@ -300,6 +302,53 @@ impl<'a> Context<'a> {
         Ok(())
     }
 
+    /// Returns the type of a field from a struct, enum, or tuple.  
+    /// For referenced types, the underlying type will be used.
+    pub fn get_field_type(&self, ty: &Type<'a>, field: &'a str) -> Result<Type<'a>, String> {
+        match ty {
+            // Peel away the references
+            Type::Reference { ty: underlying_type, .. } => {
+                self.get_field_type(underlying_type, field)
+            }
+
+            Type::Tuple(types) => todo!(),
+
+            // Check whether the type exists.
+            // If it does, check whether the field exists.
+            // If it does, return that field's type
+            Type::User(ident) => {
+                self.structs.get(ident)
+                    .ok_or(format!("Type `{}` does not exist", ty))
+                    .map(|struct_def| {
+                        struct_def.fields.get(field)
+                            .map(|(field_type, _size)| field_type.clone())
+                    })
+                    .transpose()
+                    .unwrap_or(Err(format!("Type `{}` has no field `{}`", ty, field)))
+            }
+
+            _ => Err(format!("Type `{}` cannot have any fields (tried accessing field `{}`)", ty, field)),
+        }
+    }
+
+    /// Returns the byte offset of a field for the given type.  
+    /// Note that the type **must be the base type**. References return errors.
+    pub fn get_field_offset(&self, ty: &Type<'a>, field: &'a str) -> Result<usize, String> {
+        match ty {
+            Type::Reference { .. } => Err(format!("Field offsets cannot be obtained from references")),
+
+            Type::Tuple(types) => todo!(),
+
+            Type::User(ident) => {
+                // TODO: Errors?
+                Ok(self.structs.get(ident).unwrap().fields.get(field).unwrap().1)
+            }
+
+            _ => Err(format!("Tried getting field offset of incompatible type `{}`", ty)),
+        }
+    }
+
+
     // TODO: Handle `self` parameter -- needs context of `impl`
     //       `Self` type must be handled similarly
     /// Register a function signature, then validate its contents
@@ -456,7 +505,14 @@ impl<'a> Context<'a> {
 
                 match op.item {
                     ast::BinaryOp::Add => {
-                        todo!()
+                        // Primitive numeric types can be multiplied together
+                        if l_type.is_numeric() && (r_type == l_type) {
+                            // l/r_type is arbitrary here
+                            *ty = r_type;
+                            Ok(l_type)
+                        } else {
+                            todo!("Convert `*` to `std::ops::add(LType, RType)` call")
+                        }
                     }
 
                     ast::BinaryOp::Subtract => {
@@ -511,6 +567,8 @@ impl<'a> Context<'a> {
                 let target_type = Type::User(type_name);
                 self.types.assert_valid(&target_type)?;
 
+                // FIXME: To maintain correct field ordering during error printing,
+                //        a Vec can be used instead (at the cost of speed)
                 let mut required_fields = HashSet::new();
                 
                 // FIXME: A few hacks to avoid immutable + mutable borrow
@@ -555,17 +613,18 @@ impl<'a> Context<'a> {
                 Ok(target_type)
             }
 
+            // TODO: This needs to be modified later to also support enums and tuples
             ast::Expression::FieldAccess { base_expr, field, ty } => {
-                todo!()
+                let base_type = self.validate_expression(base_expr)?;
+                
+                let field_type = self.get_field_type(&base_type, field)?;
+                *ty = field_type.clone();
+
+                Ok(field_type)
             }
 
             ast::Expression::FunctionCall { function, inputs } => {
                 todo!()
-            }
-
-            // Parenthesis only exist to help build the AST. Technically, they provide no other purpose
-            ast::Expression::Parenthesized(expr) => {
-                self.validate_expression(expr)
             }
 
             ast::Expression::Block(block) => {
@@ -576,15 +635,40 @@ impl<'a> Context<'a> {
                 Ok(expr_type)
             }
 
-            ast::Expression::Literal(literal) => {
-                // TODO: this
-                todo!()
+            ast::Expression::Literal { value, ty } => {
+                // TODO: Is this correct? 
+                //       What about when the type isn't known?
+                Ok(ty.clone())
             }
 
             // Returns the type of the variable
-            ast::Expression::Ident(ident) => {
-                self.scopes.get_variable(ident).map(|var| var.ty.clone())
+            ast::Expression::Ident { name, ty } => {
+                let ident_type = self.scopes.get_variable(name).map(|var| var.ty.clone())?;
+                *ty = ident_type.clone();
+
+                Ok(ident_type)
             }
+        }
+    }
+
+    // TODO: Could this be moved to an `impl ast::Expression` function?
+    /// Returns the type of a **validated** expression
+    pub fn get_expression_type(&self, expression: &ast::Expression<'a>) -> Result<Type<'a>, String> {
+        let expr_type = match expression {
+            ast::Expression::BinaryExpression { ty, .. } => ty.clone(),
+            ast::Expression::UnaryExpression { ty, .. } => ty.clone(), 
+            ast::Expression::FieldConstructor { type_name, .. } => Type::User(type_name),
+            ast::Expression::FieldAccess { ty, .. } => ty.clone(),
+            ast::Expression::FunctionCall { function, inputs } => todo!(),
+            ast::Expression::Block(block) => block.ty.clone(),
+            ast::Expression::Literal { ty, .. } => ty.clone(),
+            ast::Expression::Ident { ty, .. } => ty.clone(),
+        };
+
+        if expr_type.is_unknown() {
+            Err(format!("Cannot get expression type of non-validated expression"))
+        } else {
+            Ok(expr_type)
         }
     }
 }
