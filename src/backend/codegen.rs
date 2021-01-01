@@ -4,6 +4,7 @@
 // https://github.com/CraneStation/kaleidoscope-cranelift
 
 use crate::frontend::parse::ast;
+use crate::frontend::validate::context::Context as ValidationContext;
 
 use cranelift::prelude::*;
 use cranelift_module::{Module, Linkage, DataContext};
@@ -66,16 +67,16 @@ impl JITContext {
 
     // NOTE:
     // All code represented by the validation context is assumed to be valid
-    pub fn translate(&mut self, validation_context: crate::frontend::validate::context::Context) -> Result<(), String> {
+    pub fn translate(&mut self, validation_context: ValidationContext) -> Result<(), String> {
         // TODO: Use validation context to declare all functions first
         // for function in &validation_context.functions {
         // }
 
 
-        for node in validation_context.ast {
+        for node in &validation_context.ast {
             match node {
                 ast::TopLevel::Function(function) => {
-                    self.generate_function(&function)?;
+                    self.generate_function(&function, &validation_context)?;
                 }
 
                 ast::TopLevel::Trait(trait_) => {
@@ -107,7 +108,7 @@ impl JITContext {
     }
 
     // TODO: How would structs, etc. work?
-    fn generate_function(&mut self, function: &ast::Function) -> Result<(), String> {
+    fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
         // TEMP: debug
         crate::log!("Generating function `{}`:\n", function.prototype.name);
 
@@ -133,6 +134,7 @@ impl JITContext {
             fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
             pointer_type: &self.pointer_type,
             variables: super::VarMap::new(),
+            validation_context,
         };
         
         // Generates IR, then finalizes the function, making it ready for the module
@@ -173,6 +175,7 @@ struct FunctionTranslator<'a> {
     pointer_type: &'a Type,
     // Maps `Variable`s with names
     variables: super::VarMap,
+    validation_context: &'a ValidationContext<'a>,
 }
 
 impl FunctionTranslator<'_> {
@@ -218,6 +221,15 @@ impl FunctionTranslator<'_> {
         
         Ok(())
     }
+
+    fn allocate_explicit_stack_data(&mut self, bytes: u32) -> codegen::ir::StackSlot {
+        self.fn_builder.create_stack_slot(
+            StackSlotData::new(
+                StackSlotKind::ExplicitSlot, 
+                bytes
+            )
+        )
+    }
     
     fn translate_statement(&mut self, statement: &ast::Statement) -> Result<(), String> {
         // NOTE: All types will be known and validated at this point
@@ -225,15 +237,29 @@ impl FunctionTranslator<'_> {
             // TODO: Utilize knowledge of mutability
             // Create a new variable and assign it if an expression is given
             ast::Statement::Let { ident, mutable, ty, value } => {
-                let var = self.variables.create_var(ident.to_string());
-                self.fn_builder.declare_var(
-                    var,
-                    ty.ir_type(&self.pointer_type)
-                );
+                let var = self.variables.create_var(*ident);
                 
-                if let Some(value) = value {
-                    let assigned_value = self.translate_expression(value)?;
-                    self.fn_builder.def_var(var, assigned_value);
+                // Allocate stack slot if type is not an IR type
+                if ty.is_builtin() {
+                    self.fn_builder.declare_var(
+                        var,
+                        ty.ir_type(&self.pointer_type)
+                    );
+
+                    if let Some(expr) = value {
+                        let assigned_value = self.translate_expression(expr)?;
+                        self.fn_builder.def_var(var, assigned_value);
+                    }
+                } else {
+                    let bytes_needed = self.validation_context.types.size_of(ty);
+                    // FIXME: Casting usize to u32 here is (potentially) bad
+                    let stack_slot = self.allocate_explicit_stack_data(bytes_needed as u32);
+                    self.variables.register_stack_slot(*ident, stack_slot);
+                    
+                    // TODO: Fill stack slot with data
+                    if let Some(expr) = value {
+                        todo!()
+                    }
                 }
             }
             
@@ -348,6 +374,14 @@ impl FunctionTranslator<'_> {
             }
 
             ast::Expression::FieldConstructor { type_name, fields } => {
+                todo!()
+            }
+
+            ast::Expression::FieldAccess { base_expr, field, ty  } => {
+                todo!()
+            }
+
+            ast::Expression::FunctionCall { function, inputs } => {
                 todo!()
             }
 

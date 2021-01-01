@@ -799,9 +799,8 @@ impl<'a> Parser<'a> {
 
     // Precedence for [+, -]
     fn parse_expression_additive(&self) -> Node<ast::Expression> {
+        let start = self.current_span();
         let mut expression = self.parse_expression_multiplicative();
-        // Span begins with the previous expression
-        let start = expression.span.clone();
 
         // loop => associative
         // Note that the expression is built up with each iteration
@@ -832,9 +831,8 @@ impl<'a> Parser<'a> {
 
     // Precedence for [*, /]
     fn parse_expression_multiplicative(&self) -> Node<ast::Expression> {
+        let start = self.current_span();
         let mut expression = self.parse_expression_unary();
-        // Span begins with the previous expression
-        let start = expression.span.clone();
 
         loop {
             match self.current_token() {
@@ -862,8 +860,8 @@ impl<'a> Parser<'a> {
 
     // Precedence for [negation, not]
     fn parse_expression_unary(&self) -> Node<ast::Expression> {
-        let expression;
         let start = self.current_span();
+        let expression;
 
         match self.current_token() {
             Token::Minus => {
@@ -885,11 +883,52 @@ impl<'a> Parser<'a> {
             }
 
             _ => {
-                return self.parse_expression_base();
+                return self.parse_expression_field_access();
             }
         }
 
         Node::new(expression, start.extend(*self.previous_span()))
+    }
+
+    // `a.b.c` ..etc.
+    // Should always have 3rd highest precedence (below method call and base expressions)
+    fn parse_expression_field_access(&self) -> Node<ast::Expression> {
+        let start = self.current_span();
+        // let base = self.parse_expression_method_call();
+        let mut base = self.parse_expression_base();
+        
+        // FIXME: There is a nice recursive solution here that I can't figure out
+        //        (although nothing is wrong with this implementation)
+        loop {
+            if let Token::Dot = self.current_token() {
+                self.advance();
+                
+                // TODO: Can parse method calls in this branch too
+                //       might want to keep separate function for readability though
+                if let Token::Ident(ident) = self.current_token() {
+                    self.advance();
+
+                    let access = ast::Expression::FieldAccess {
+                        base_expr: Box::new(base),
+                        field: ident,
+                        ty: Type::Unknown,
+                    };
+                    base = Node::new(access, start.extend(*self.current_span()));
+                } else {
+                    parser_error!(self.file_path, self.current_span(), "Expected ident to create field access. Found `{}`", self.current_token());
+                }
+            } else {
+                break;
+            }
+        }
+
+        base
+    }
+
+    // `a.b()`
+    // Should always have 2nd highest precedence (below base expression)
+    fn parse_expression_method_call(&self) -> Node<ast::Expression> {
+        todo!()
     }
 
     // Precedence for [parentheticals, literals, identifiers]

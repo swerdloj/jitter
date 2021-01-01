@@ -156,6 +156,21 @@ pub enum Expression<'input> {
         fields: std::collections::HashMap<&'input str, Node<Expression<'input>>>,
     },
 
+    FieldAccess {
+        base_expr: Box<Node<Expression<'input>>>,
+        field: &'input str,
+        ty: Type<'input>,
+    },
+
+    // MethodCall {
+    //     ty: Type<'input>,
+    // }
+
+    FunctionCall {
+        function: &'input str,
+        inputs: Vec<Node<Expression<'input>>>,
+    },
+
     // TODO: Can this be removed entirely? Doesn't do anything other than when parsing
     Parenthesized(Box<Node<Expression<'input>>>),
 

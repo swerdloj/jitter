@@ -73,6 +73,7 @@ mod tests {
             Token::Equals,
             Token::LeftAngleBracket,
             Token::RightAngleBracket,
+            Token::Dot,
             Token::Comma,
             Token::Colon,
             Token::Semicolon,

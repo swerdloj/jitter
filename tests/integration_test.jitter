@@ -54,11 +54,13 @@ struct Test {
 }
 
 fn struct_test(a: u8, b: u16, c: u64) {
-    Test {
+    let x = Test {
         a,
         b: b,
         c,
     };
+
+    x.a.b.c;
 }
 
 // TODO: Tuples

@@ -35,6 +35,7 @@ pub enum Token<'input> {
     LeftAngleBracket,   // '<'
     RightAngleBracket,  // '>'
 
+    Dot,                // '.'
     Comma,              // ','
     Colon,              // ':'
     Semicolon,          // ';'
@@ -85,6 +86,7 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Equals => "=".to_owned(),
             Token::LeftAngleBracket => "<".to_owned(),
             Token::RightAngleBracket => ">".to_owned(),
+            Token::Dot => ".".to_owned(),
             Token::Comma => ",".to_owned(),
             Token::Colon => ":".to_owned(),
             Token::Semicolon => ";".to_owned(),
@@ -305,6 +307,10 @@ impl<'input> Lexer<'input> {
             '=' => {
                 self.advance();
                 Equals
+            }
+            '.' => {
+                self.advance();
+                Dot
             }
             ',' => {
                 self.advance();

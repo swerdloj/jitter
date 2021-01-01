@@ -31,31 +31,39 @@ TODO:
 use std::collections::HashMap;
 
 use cranelift::prelude::*;
-
-/// Simple helper data structure for associating cranelift `Variable`s with
-/// `String` names
+use cranelift::codegen::ir::StackSlot;
+/// Simple helper data structure for associating cranelift `Variable`s with `String` names.
+/// Note that `String` keys are used to remove dependency from source file
 pub struct VarMap {
+    /// IR compatible types are allocated as `Variable`s
     variables: HashMap<String, Variable>,
+    /// Custom types (e.g.: user-defined) require explicit allocations
+    stack_slots: HashMap<String, StackSlot>,
     /// Each variable requires a unique index
     index: usize,
 }
 
 impl VarMap {
     pub fn new() -> Self {
-        Self{
+        Self {
             variables: HashMap::new(),
+            stack_slots: HashMap::new(),
             index: 0,
         }
     }
 
-    pub fn create_var(&mut self, name: String) -> Variable {
+    pub fn create_var(&mut self, name: impl Into<String>) -> Variable {
         let var = Variable::new(self.index);
         self.index += 1;
         
         // TODO: Duplicate checking?
-        self.variables.insert(name, var);
+        self.variables.insert(name.into(), var);
 
         var
+    }
+
+    pub fn register_stack_slot(&mut self, name: impl Into<String>, slot: StackSlot) {
+        self.stack_slots.insert(name.into(), slot);
     }
 
     pub fn get_var(&self, name: &str) -> Result<&Variable, String> {

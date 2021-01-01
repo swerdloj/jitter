@@ -12,9 +12,9 @@ struct StructDefinition<'input> {
     fields: HashMap<&'input str, (Type<'input>, usize)>,
 }
 
-struct TypeTableEntry {
+pub struct TypeTableEntry {
     /// Size of type in bytes
-    size: usize,
+    pub size: usize,
     /// Alignment of type in bytes
     alignment: usize,
 }
@@ -26,7 +26,7 @@ impl TypeTableEntry {
 }
 
 /// Stores type sizes and alignments
-struct TypeTable<'input> {
+pub struct TypeTable<'input> {
     /// Map of field_name -> (size, alignment) in bytes
     data: HashMap<Type<'input>, TypeTableEntry>
 }
@@ -112,7 +112,7 @@ impl<'input> TypeTable<'input> {
     }
 
     /// Returns the size of the type in bytes
-    fn size_of(&self, t: &Type) -> usize {
+    pub fn size_of(&self, t: &Type) -> usize {
         self.data.get(t).unwrap().size
     }
 }
@@ -190,7 +190,7 @@ pub struct Context<'input> {
     /// Struct signatures
     structs: HashMap<&'input str, StructDefinition<'input>>,
     /// Type information
-    types: TypeTable<'input>,
+    pub types: TypeTable<'input>,
     /// Scoped variable information
     scopes: Scopes<'input>,
 
@@ -553,6 +553,14 @@ impl<'a> Context<'a> {
                 }
 
                 Ok(target_type)
+            }
+
+            ast::Expression::FieldAccess { base_expr, field, ty } => {
+                todo!()
+            }
+
+            ast::Expression::FunctionCall { function, inputs } => {
+                todo!()
             }
 
             // Parenthesis only exist to help build the AST. Technically, they provide no other purpose

@@ -140,8 +140,53 @@ impl<'input> Type<'input> {
         }
     }
 
+    pub fn ir_type(&self, pointer_type: &cranelift_types::Type) -> cranelift_types::Type {
+        // NOTE: `I` is for `integer` -> sign is not regarded
+        match self {
+            // These are all `size` regardless of whether unsigned, reference, or pointer
+            Type::usize
+            | Type::isize
+            | Type::Reference { .. } 
+            /*| Type::Pointer { .. } */ => *pointer_type,
+
+            Type::u8 => cranelift_types::I8,
+            Type::u16 => cranelift_types::I16,
+            Type::u32 => cranelift_types::I32,
+            Type::u64 => cranelift_types::I64,
+            Type::u128 => cranelift_types::I128,
+
+            Type::i8 => cranelift_types::I8,
+            Type::i16 => cranelift_types::I16,
+            Type::i32 => cranelift_types::I32,
+            Type::i64 => cranelift_types::I64,
+            Type::i128 => cranelift_types::I128,
+
+            Type::f32 => cranelift_types::F32,
+            Type::f64 => cranelift_types::F64,
+
+            Type::bool => cranelift_types::B8,
+
+            // TODO: What to do about these?
+            Type::Unit => cranelift_types::INVALID,
+            Type::Tuple(_) => cranelift_types::INVALID,
+            Type::User(_) => cranelift_types::INVALID,
+
+            Type::Unknown => cranelift_types::INVALID,
+        }
+    }
+
     pub fn is_unknown(&self) -> bool {
         self == &Type::Unknown
+    }
+
+    /// Used to determine whether explicit stack allocation is needed for the type
+    pub fn is_builtin(&self) -> bool {
+        match self {
+            Type::User(_)
+            | Type::Tuple(_) => true,
+
+            _ => true,
+        }
     }
 
     pub fn is_signed_integer(&self) -> bool {
@@ -208,48 +253,13 @@ impl<'input> Type<'input> {
         }
     }
 
-    // pub fn is_reference(&self) -> bool {
-    //     if let Type::Reference {..} = self { true } else { false }
-    // }
+    pub fn is_reference(&self) -> bool {
+        if let Type::Reference {..} = self { true } else { false }
+    }
 
     // This is useful for determining whether an assignment is valid 
     // (variable doesn't need to be mutable if reference is mutable)
     pub fn is_mutable_reference(&self) -> bool {
         if let Type::Reference { mutable: true, ..} = self { true } else { false }
-    }
-
-    pub fn ir_type(&self, pointer_type: &cranelift_types::Type) -> cranelift_types::Type {
-        // NOTE: `I` is for `integer` -> sign is not regarded
-        match self {
-            // These are all `size` regardless of whether unsigned, reference, or pointer
-            Type::usize
-            | Type::isize
-            | Type::Reference { .. } 
-            /*| Type::Pointer { .. } */ => *pointer_type,
-
-            Type::u8 => cranelift_types::I8,
-            Type::u16 => cranelift_types::I16,
-            Type::u32 => cranelift_types::I32,
-            Type::u64 => cranelift_types::I64,
-            Type::u128 => cranelift_types::I128,
-
-            Type::i8 => cranelift_types::I8,
-            Type::i16 => cranelift_types::I16,
-            Type::i32 => cranelift_types::I32,
-            Type::i64 => cranelift_types::I64,
-            Type::i128 => cranelift_types::I128,
-
-            Type::f32 => cranelift_types::F32,
-            Type::f64 => cranelift_types::F64,
-
-            Type::bool => cranelift_types::B8,
-
-            // TODO: What to do about these?
-            Type::Unit => cranelift_types::INVALID,
-            Type::Tuple(_) => cranelift_types::INVALID,
-            Type::User(_) => cranelift_types::INVALID,
-
-            Type::Unknown => cranelift_types::INVALID,
-        }
     }
 }
