@@ -1008,6 +1008,11 @@ impl<'a> Parser<'a> {
                 // `#.#`
                 format!("{}.{}", number, decimal).parse().expect("parse float")
             } else {
+                // Don't allow `#.type` to avoid struct-field confusion
+                if let Token::Ident(_) = self.current_token() {
+                    parser_error!(self.file_path, self.current_span(), "Floating point numbers with type-specifiers must include decimal values (for example, write `1.0f32` instead of `1.f32`)");
+                }
+
                 // `#.` -> `#.0`
                 format!("{}.0", number).parse().expect("parse float no decimal")
             };

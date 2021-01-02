@@ -511,7 +511,7 @@ impl<'a> Context<'a> {
                             *ty = r_type;
                             Ok(l_type)
                         } else {
-                            todo!("Convert `*` to `std::ops::add(LType, RType)` call")
+                            todo!("Convert `+` to `std::ops::add(LType, RType)` call")
                         }
                     }
 

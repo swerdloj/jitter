@@ -134,7 +134,7 @@ impl JITContext {
         let mut function_translator = FunctionTranslator {
             fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
             pointer_type: &self.pointer_type,
-            variables: super::VarMap::new(),
+            data: super::DataMap::new(),
             validation_context,
         };
         
@@ -174,8 +174,8 @@ impl JITContext {
 struct FunctionTranslator<'a> {
     fn_builder: FunctionBuilder<'a>,
     pointer_type: &'a Type,
-    // Maps `Variable`s with names
-    variables: super::VarMap,
+    // Maps `Variable`s to names and `StackSlots` to addresses
+    data: super::DataMap,
     validation_context: &'a ValidationContext<'a>,
 }
 
@@ -194,7 +194,7 @@ impl FunctionTranslator<'_> {
         for (index, param_node) in function.prototype.parameters.iter().enumerate() {            
             let param_type = param_node.field_type.ir_type(&self.pointer_type);
             
-            let var = self.variables.create_var(param_node.field_name.to_owned());
+            let var = self.data.create_var(param_node.field_name.to_owned());
             
             // Decalre the parameter and its type
             self.fn_builder.declare_var(var, param_type);
@@ -203,7 +203,7 @@ impl FunctionTranslator<'_> {
         }
         
         // Declare the function's return Variable
-        let return_var = self.variables.create_var("return".to_owned());
+        let return_var = self.data.create_var("return".to_owned());
         self.fn_builder.declare_var(return_var, return_type);
 
         // TODO: If function returns a user type, need to allocate
@@ -216,7 +216,7 @@ impl FunctionTranslator<'_> {
                
         self.fn_builder.finalize();
         
-        // TEMP: debug
+        // TEMP: debug (prints function BEFORE optimizations)
         crate::log!("{}", self.fn_builder.display(None));
         
         Ok(())
@@ -237,7 +237,7 @@ impl FunctionTranslator<'_> {
             // TODO: Utilize knowledge of mutability
             // Create a new variable and assign it if an expression is given
             ast::Statement::Let { ident, mutable, ty, value } => {
-                let var = self.variables.create_var(*ident);
+                let var = self.data.create_var(*ident);
 
                 // Stack-allocated types are just memory addresses
                 if ty.is_builtin() {
@@ -258,7 +258,7 @@ impl FunctionTranslator<'_> {
             // Assign a value to a variable
             ast::Statement::Assign { variable, operator, expression } => {
                 let expr_value = self.translate_expression(expression)?;
-                let var = self.variables.get_var(variable)?;
+                let var = self.data.get_var(variable)?;
                 
                 match operator.item {
                     ast::AssignmentOp::Assign => {
@@ -372,6 +372,8 @@ impl FunctionTranslator<'_> {
                 
                 // Allocate the type on the stack and get its address
                 let stack_slot = self.allocate_explicit_stack_data(type_size);
+                // FIXME: This appears to be the wrong approach to getting stack addresses
+                //        Is this address what should be returned for custom types?
                 let stack_address = self.fn_builder.ins().stack_addr(
                     *self.pointer_type, 
                     stack_slot, 
@@ -385,14 +387,14 @@ impl FunctionTranslator<'_> {
                     self.fn_builder.ins().stack_store(field_value, stack_slot, field_offset);
                 }
 
-                self.variables.register_stack_slot(stack_address, stack_slot);
+                self.data.register_stack_slot(stack_address, stack_slot);
 
                 stack_address
             }
 
             ast::Expression::FieldAccess { base_expr, field, ty  } => {
                 let stack_address = self.translate_expression(base_expr)?;
-                let stack_slot = self.variables.get_stack_slot(&stack_address)?;
+                let stack_slot = self.data.get_stack_slot(&stack_address)?;
                 let base_type = self.validation_context.get_expression_type(base_expr)?;
                 let offset = self.validation_context.get_field_offset(&base_type, field)?;
 
@@ -412,7 +414,7 @@ impl FunctionTranslator<'_> {
                 todo!()
             }
 
-            ast::Expression::Literal{ value, ty } => {
+            ast::Expression::Literal { value, ty } => {
                 match value {
                     ast::Literal::Integer(integer) => {
                         // FIXME: Narrowing cast
@@ -422,6 +424,7 @@ impl FunctionTranslator<'_> {
                         match ty {
                             // FIXME: Narrowing cast
                             CompilerType::f32 => self.fn_builder.ins().f32const(*float as f32),
+                            
                             CompilerType::f64 => self.fn_builder.ins().f64const(*float),
                             
                             _ => unreachable!(),
@@ -435,7 +438,7 @@ impl FunctionTranslator<'_> {
             
             // Get IR reference to the variable
             ast::Expression::Ident { name, ty } => {
-                let var = self.variables.get_var(name)?;
+                let var = self.data.get_var(name)?;
                 self.fn_builder.use_var(*var)
             }
         };

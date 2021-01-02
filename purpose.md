@@ -5,13 +5,14 @@
 - https://github.com/pistondevelopers/dyon
 - https://www.boringcactus.com/2020/09/16/survey-of-rust-embeddable-scripting-languages.html
 - (discussion) https://www.reddit.com/r/rust/comments/jqms89/i_wrote_a_programming_languageinterpreter_as_a/
+- https://github.com/nyar-lang/valkyrie-language
 
 # Language Ideas
 
-## Overarching Goal
+## Overarching Goals
 - Use the language itself as a base (just a Rust-inspired scripting language)
 - Continue with the original idea:
-  - Jitter is to Rust what Lua is to C++
+  - Jitter is to Rust what Lua is to C/C++
 - Hot-reloadable
   - Jitter functions (in .jitter files) should have a hot-reload mechanism when used in Rust projects
   - Allow for designated persistent data (between reloads):
@@ -21,6 +22,39 @@
 @persistent
 static mut EXAMPLE_DATA: type = ...;
 ```
+### Secondary/Long-Term Goals
+- Custom syntax
+  - Not sure how to approach just yet. Base language is needed first
+- AST hooks
+  - Like custom syntax, but gives users the ability to manipulate the AST directly
+- Multiple backends
+  - Host-language contexts (primary backend)
+  - REPL (with imports, etc.)
+  - Standalone compiler (produce executables)
+
+## Language Features
+- Simplified enums:
+```Rust
+// example using `match`
+match enum_variable {
+    // instead of path::EnumType::Variant
+    .Variant {..} => ..,
+}
+```
+- Option unwrapping
+  - Similar to `Result`'s `?` operator
+  - `panic` instead of returning an error
+```Rust
+let x: Option<u32> = None;
+// Panics if `x` is `None` (equivalent to x.unwrap())
+let y: u32 = x!;
+```
+- Simple threading/async
+  - Not sure how viable this is with Cranelift
+  - Don't need to worry about being strict like Rust
+- No lifetimes
+  - Lifetimes would be a bit excessive for a scripting language
+  - How to deal with memory though?
 
 ## Language Specializations (potential purposes)
 ## 1. DSLs

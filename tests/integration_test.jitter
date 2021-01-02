@@ -60,8 +60,8 @@ struct Test {
 
 fn specified_literals() -> i8 {
     Test {
-        a: -16_i8,
-        b: 123u16,
+        a: -16_i8 + 3i8,
+        b: 123u16 + 7u16,
         c: 3___2_1____u16,
     }.a
 }
