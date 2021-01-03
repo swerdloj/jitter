@@ -32,7 +32,7 @@ impl FunctionTranslator<'_> {
         self.fn_builder.switch_to_block(entry_block);
         // No predecessors for entry blocks
         self.fn_builder.seal_block(entry_block);
-            
+
         // Declare the function's parameters (entry block params)
         for (index, param_node) in function.prototype.parameters.iter().enumerate() {            
             let param_type = param_node.field_type.ir_type(&self.pointer_type);
@@ -44,25 +44,28 @@ impl FunctionTranslator<'_> {
             // Define the parameter with the values passed when calling the function
             self.fn_builder.def_var(var, self.fn_builder.block_params(entry_block)[index]);
         }
-        
-        // Declare the function's return Variable
-        let return_var = self.data.create_var("return".to_owned());
-        self.fn_builder.declare_var(return_var, return_type);
-
+    
         // TODO: If function returns a user type, need to allocate
         //       a `StructReturnSlot`, then store the type data into that
         //       `StackSlot`
+        //       Note that a special return value is also needed in this case
         
         for statement in &function.body.block.item {
             self.translate_statement(statement)?;
         }
+
+        // No return type -> just return nothing at end of function
+        // TODO: Ensure that explicit `return ()`s don't break anything
+        //       with this extra return being inserted
+        if return_type.is_invalid() {
+            self.fn_builder.ins().return_(&[]);
+        }
                
         self.fn_builder.finalize();
         
-        // TEMP: debug (prints function BEFORE optimizations)
-        // FIXME: Can't print FFI calls (panics)
-        // crate::log!("{}", self.fn_builder.display(self.module.isa()));
-        
+        // TEMP: debug (prints function before optimizations)
+        crate::log!("{}", self.fn_builder.display(self.module.isa()));
+
         Ok(())
     }
 
@@ -83,19 +86,17 @@ impl FunctionTranslator<'_> {
             ast::Statement::Let { ident, mutable, ty, value } => {
                 let var = self.data.create_var(*ident);
 
-                // Stack-allocated types are just memory addresses
-                if ty.is_builtin() {
-                    self.fn_builder.declare_var(
-                        var,
-                        ty.ir_type(&self.pointer_type)
-                    );
-                } else {
-                    self.fn_builder.declare_var(var, *self.pointer_type);
-                }
-
+                // Unit type is declared as invalid. 
+                // This mean variables assigned type `()` can still be referenced
+                // (perhaps for traits?), but cannot be assigned illegally
+                self.fn_builder.declare_var(var,ty.ir_type(&self.pointer_type));
+                
                 if let Some(expr) = value {
                     let assigned_value = self.translate_expression(expr)?;
-                    self.fn_builder.def_var(var, assigned_value);
+                    // Unit type has no actual representation (zero-sized)
+                    if !ty.is_unit() {
+                        self.fn_builder.def_var(var, assigned_value);
+                    }
                 }
             }
             
@@ -133,6 +134,7 @@ impl FunctionTranslator<'_> {
                 }
             }
             
+            // FIXME: This can be represented as an ImplicitReturn with `is_function_return` flag
             ast::Statement::Return { expression } => {
                 let return_value = self.translate_expression(expression)?;
                 self.fn_builder.ins().return_(&[return_value]);
@@ -250,7 +252,10 @@ impl FunctionTranslator<'_> {
                 )
             }
 
+            // FIXME: Same functions are being declared multiple times.
+            //        Should only ever declare a function once
             ast::Expression::FunctionCall { name, inputs, ty } => {
+                /* FIXME: What is this doing regarding the existing definition?
                 // Build the function call signature
                 let mut call_signature = self.module.make_signature();
                 
@@ -261,14 +266,15 @@ impl FunctionTranslator<'_> {
                     );
                 }
 
-                if !ty.is_unknown() {
+                // No return values for unit types
+                if ty != &CompilerType::Unit {
                     call_signature.returns.push(AbiParam::new(ty.ir_type(self.pointer_type)));
                 }
 
                 // Reference the function
-                // FIXME: What is this doing regarding the existing definition?
-                // let func_id = self.module.declare_function(name, Linkage::Import, &call_signature)
-                //     .map_err(|e| e.to_string())?;
+                let func_id = self.module.declare_function(name, cranelift_module::Linkage::Import, &call_signature)
+                    .map_err(|e| e.to_string())?;
+                */
 
                 // FIXME: Isn't this better than the above? What is the difference?
                 let func_id = if let cranelift_module::FuncOrDataId::Func(id) = self.module.declarations().get_name(name).expect("get_function_id_for_call") {
@@ -279,6 +285,8 @@ impl FunctionTranslator<'_> {
                     // return Err(format!("Not a function: {}", name));
                 };
             
+                // FIXME: This is only needed once per referenced function 
+                //        (declares same function multiple times in some cases)
                 let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
 
                 // Obtain argument values
@@ -288,9 +296,19 @@ impl FunctionTranslator<'_> {
                 }
 
                 let call = self.fn_builder.ins().call(func_ref, &values);
-                
-                // Jitter supports only single returns -> always index 0
-                self.fn_builder.inst_results(call)[0]
+
+                let result = self.fn_builder.inst_results(call);
+
+                // FIXME: Handle the multiple return API better
+                if result.len() == 1 {
+                    result[0]
+                } else if result.len() == 0 {
+                    // FIXME: Ideally, I would return an INVALID value
+                    Value::from_u32(0)
+                } else {
+                    // Multiple returns not suppported by jitter
+                    unreachable!()
+                }
             }
 
             ast::Expression::Block(block) => {

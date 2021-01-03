@@ -191,35 +191,38 @@ impl JITContext {
 
     fn forward_declare_function(&mut self, name: &str, definition: &crate::frontend::validate::context::FunctionDefinition) -> Result<cranelift_module::FuncId, String> {
         if self.functions.contains_key(name) {
-            Err(format!("Function `{}` was already defined", name))
-        } else {
-            let mut signature = self.module.make_signature();
-
-            for (_field_name, ty, _mutable) in &definition.parameters {
-                signature.params.push(AbiParam::new(ty.ir_type(&self.pointer_type)));
-            }
-
-            // Unit type (no return type) if `is_unknown`
-            if !definition.return_type.is_unknown() {
-                signature.returns.push(AbiParam::new(definition.return_type.ir_type(&self.pointer_type)));
-            }
-
-            let linkage = if definition.is_extern {
-                Linkage::Import
-            } else {
-                Linkage::Local
-            };
-
-            let func_id = self.module.declare_function(name, linkage, &signature)
-                .map_err(|e| e.to_string())?;
-
-            // TODO: Store additional information in `functions`
-            self.functions.insert(name.to_string(), func_id);
-
-            Ok(func_id)
+            return Err(format!("Function `{}` was already defined", name));
         }
+
+        let mut signature = self.module.make_signature();
+
+        for (_field_name, ty, _mutable) in &definition.parameters {
+            signature.params.push(AbiParam::new(ty.ir_type(&self.pointer_type)));
+        }
+
+        // Unit return type -> nothing returned
+        if !definition.return_type.is_unit() {
+            signature.returns.push(AbiParam::new(definition.return_type.ir_type(&self.pointer_type)));
+        }
+
+        let linkage = if definition.is_extern {
+            Linkage::Import
+        } else {
+            Linkage::Local
+        };
+
+        let func_id = self.module.declare_function(name, linkage, &signature)
+            .map_err(|e| e.to_string())?;
+
+        // TODO: Store additional information in `functions`
+        self.functions.insert(name.to_string(), func_id);
+
+        Ok(func_id)
     }
 
+    // TODO: Much of this functionality needs to be moved to `codegen.rs`
+    //       My goal is to have code generation occur **only** in `codegen.rs`
+    //       Nothing else should touch IR generation
     fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
         let func_id = self.functions.get(function.prototype.name)
             .ok_or(format!("Attempted to translate an unregistered function: {}", function.prototype.name))?;

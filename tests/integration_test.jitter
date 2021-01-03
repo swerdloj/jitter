@@ -47,6 +47,7 @@
 //     libtest::pub_test();
 // }
 
+// TODO: Will this always be C-style?
 extern {
     fn hello_from_rust(number: i32);
 }
@@ -58,9 +59,13 @@ struct Test {
 }
 
 // TODO: Custom type returns
-// fn FFI_test(a: u8, b: u16, c: u16) -> Test {
+// fn FFI_test(a: i8, b: u16, c: u16) -> Test {
 //     Test { a, b, c }
 // }
+
+fn no_return() {
+    let x = 7.2_f32;
+}
 
 fn specified_literals() -> i8 {
     Test {
@@ -92,6 +97,7 @@ fn function_calls(a: i32) -> i32 {
     let mut call_result = multiply(2_i32, 3_i32);
     call_result += multiply(3_i32, 4_i32);
 
+    let x: () = no_return();
     hello_from_rust(12_i32);
 
     call_result + a

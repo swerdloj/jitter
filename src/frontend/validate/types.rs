@@ -159,7 +159,8 @@ impl<'input> Type<'input> {
             // These are all `size` regardless of whether unsigned, reference, or pointer
             Type::usize
             | Type::isize
-            | Type::Reference { .. } 
+            | Type::Reference { .. }
+            | Type::User(_)
             /*| Type::Pointer { .. } */ => *pointer_type,
 
             Type::u8 => cranelift_types::I8,
@@ -182,7 +183,7 @@ impl<'input> Type<'input> {
             // TODO: What to do about these?
             Type::Unit => cranelift_types::INVALID,
             Type::Tuple(_) => cranelift_types::INVALID,
-            Type::User(_) => cranelift_types::INVALID,
+            // Type::User(_) => cranelift_types::INVALID,
 
             Type::Unknown => cranelift_types::INVALID,
         }
@@ -190,6 +191,18 @@ impl<'input> Type<'input> {
 
     pub fn is_unknown(&self) -> bool {
         self == &Type::Unknown
+    }
+
+    pub fn is_unit(&self) -> bool {
+        self == &Type::Unit
+    }
+
+    pub fn is_user_defined(&self) -> bool {
+        match self {
+            Type::Tuple(_)
+            | Type::User(_) => true,
+            _ => false,
+        }
     }
 
     /// Used to determine whether explicit stack allocation is needed for the type
