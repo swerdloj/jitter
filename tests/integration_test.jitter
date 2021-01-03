@@ -47,6 +47,10 @@
 //     libtest::pub_test();
 // }
 
+extern {
+    fn hello_from_rust(number: i32);
+}
+
 struct Test {
     a: i8,
     b: u16,
@@ -81,6 +85,16 @@ fn struct_test(a: i8, b: u16, c: u16) -> u16 {
 
 fn multiply(a: i32, b: i32) -> i32 {
     a * b
+}
+
+// TODO: Make definition order not matter
+fn function_calls(a: i32) -> i32 {
+    let mut call_result = multiply(2_i32, 3_i32);
+    call_result += multiply(3_i32, 4_i32);
+
+    hello_from_rust(12_i32);
+
+    call_result + a
 }
 
 fn negate(a: i32) -> i32 {

@@ -1,11 +1,11 @@
 :: USAGE
 :: `test` will simply run '/examples/test.rs' in debug mode
-:: `test bench` will run '/examples/test.rs' in release mode and time runtime
+:: `test bench` will run '/tests/benchmark.rs' in release mode and time compilation stages
 
 @echo off
 
 if "%1" == "bench" (
-    cargo run --release --example test --features=benchmark
+    cargo test benchmark --release --features=benchmark -q -- --nocapture
     goto end
 )
 

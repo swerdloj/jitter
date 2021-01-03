@@ -3,6 +3,7 @@
 
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
+    Extern,
     Enum,
     For,
     Fn,
@@ -63,6 +64,7 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Ident(ident) => format!("identifier: {}", ident),
             Token::Keyword(keyword) => {
                 let word = match keyword {
+                    Keyword::Extern => "extern",
                     Keyword::Enum => "enum",
                     Keyword::For => "for",
                     Keyword::Fn => "fn",
@@ -379,8 +381,8 @@ impl<'input> Lexer<'input> {
                 // NOTE: Could just treat everything as idents, then check those for keywords,
                 //       but this is much faster
                 match it {
-                    // enum
                     'e' => {
+                        // enum
                         if self.is_next('n')? {
                             self.advance();
                             if self.is_next('u')? {
@@ -390,6 +392,25 @@ impl<'input> Lexer<'input> {
                                     if !self.is_next_alphanumeric()? {
                                         self.advance();
                                         token = Some(Token::Keyword(self::Keyword::Enum));
+                                    }
+                                }
+                            }
+                        // extern
+                        } else if self.is_next('x')? {
+                            self.advance();
+                            if self.is_next('t')? {
+                                self.advance();
+                                if self.is_next('e')? {
+                                    self.advance();
+                                    if self.is_next('r')? {
+                                        self.advance();
+                                        if self.is_next('n')? {
+                                            self.advance();
+                                            if !self.is_next_alphanumeric()? {
+                                                self.advance();
+                                                token = Some(Token::Keyword(self::Keyword::Extern));
+                                            }
+                                        }
                                     }
                                 }
                             }

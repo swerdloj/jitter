@@ -2,7 +2,7 @@ use super::lex::{SpannedToken, Token};
 use crate::frontend::validate::types::Type;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node<NodeType> {
     pub item: NodeType,
     pub span: crate::Span,
@@ -46,6 +46,7 @@ pub type AST<'input> = Vec<TopLevel<'input>>;
 
 #[derive(Debug)]
 pub enum TopLevel<'input> {
+    ExternBlock(Node<ExternBlock<'input>>),
     Function(Node<Function<'input>>),
     Trait(Node<Trait<'input>>),
     Impl(Node<Impl<'input>>),
@@ -53,6 +54,8 @@ pub enum TopLevel<'input> {
     ConstDeclaration,
     UseStatement,
 }
+
+pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
 
 #[derive(Debug)]
 pub struct Function<'input> {
@@ -106,7 +109,7 @@ pub struct FunctionParameter<'input> {
     pub field_type: Type<'input>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement<'input> {
     Let {
         ident: &'input str,
@@ -133,7 +136,7 @@ pub enum Statement<'input> {
     Expression(Node<Expression<'input>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression<'input> {
     BinaryExpression {
         lhs: Box<Node<Expression<'input>>>,
@@ -171,8 +174,12 @@ pub enum Expression<'input> {
     // }
 
     FunctionCall {
-        function: &'input str,
+        /// Name of function being called
+        name: &'input str,
+        /// Expressions passed as input to the function (in order)
         inputs: Vec<Node<Expression<'input>>>,
+        /// Type returned by the function
+        ty: Type<'input>,
     },
 
     Block(BlockExpression<'input>),
@@ -188,13 +195,13 @@ pub enum Expression<'input> {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockExpression<'input> {
     pub block: Node<Vec<Node<Statement<'input>>>>,
     pub ty: Type<'input>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     /// Integer of any type
     Integer(isize),
@@ -204,13 +211,13 @@ pub enum Literal {
     UnitType, 
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Negate,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
     Subtract,
@@ -231,7 +238,7 @@ impl BinaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AssignmentOp {
     Assign,
     AddAssign,

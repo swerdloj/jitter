@@ -91,6 +91,8 @@ impl<'a> Parser<'a> {
 
     ///////////// Parse Functions /////////////
 
+    // TODO: Might want AST to be a type where each TopLevel
+    //       is a field containing lists of those items
     pub fn parse_ast(&self) -> ast::AST {
         let mut ast = Vec::new();
 
@@ -103,46 +105,50 @@ impl<'a> Parser<'a> {
 
     // TopLevel items are all nodes by themselves
     pub fn parse_top_level(&self) -> ast::TopLevel {
-        let item;
-
         match self.current_token() {
             Token::Keyword(keyword) => {
                 match keyword {
+                    Keyword::Extern => {
+                        self.advance();
+                        ast::TopLevel::ExternBlock(
+                            self.parse_extern_block()
+                        )
+                    }
+
                     Keyword::Use => {
-                        // TODO: This
                         todo!("modules")
                     }
 
                     Keyword::Fn => {
                         self.advance();
 
-                        item = ast::TopLevel::Function(
+                        ast::TopLevel::Function(
                             self.parse_function_definition()
-                        );
+                        )
                     }
 
                     Keyword::Trait => {
                         self.advance();
 
-                        item = ast::TopLevel::Trait(
+                        ast::TopLevel::Trait(
                             self.parse_trait_definition()
-                        );
+                        )
                     }
 
                     Keyword::Impl => {
                         self.advance();
 
-                        item = ast::TopLevel::Impl(
+                        ast::TopLevel::Impl(
                             self.parse_impl()
-                        );
+                        )
                     }
 
                     Keyword::Struct => {
                         self.advance();
 
-                        item = ast::TopLevel::Struct(
+                        ast::TopLevel::Struct(
                             self.parse_struct_definition()
-                        );
+                        )
                     }
 
                     _ => {
@@ -156,22 +162,50 @@ impl<'a> Parser<'a> {
                 parser_error!(self.file_path, self.current_span(), "Expected a TODO:. Found unexpected token `{}`", self.current_token());
             }
         }
+    }
 
-        item
+    pub fn parse_extern_block(&self) -> Node<ast::ExternBlock> {
+        // span of `extern` keyword
+        let start = self.previous_span();
+        let mut externs = Vec::new();
+
+        if let Token::OpenCurlyBrace = self.current_token() {
+            self.advance();
+            loop {
+                if let Token::Keyword(Keyword::Fn) = self.current_token() { 
+                    self.advance();
+
+                    externs.push(self.parse_function_prototype());
+
+                    if let Token::Semicolon = self.current_token() {
+                        self.advance();
+                    } else {
+                        parser_error!(self.file_path, self.current_span(), "Expected `;` following extern function prototype. Found `{}`", self.current_token());
+                    }
+                }
+                
+                if let Token::CloseCurlyBrace = self.current_token() {
+                    self.advance();
+                    break;
+                }
+            }
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected `{{` to begin extern block. Found `{}`", self.current_token());
+        }
+        
+        Node::new(externs, start.extend(*self.previous_span()))
     }
 
     // TODO: Use this whenever possible for parsing types
     //       Need to look through to see where applicable
     /// Recursively evaluates types
     pub fn parse_type(&self) -> Type { //Result<Type, String> {
-        let type_;
-
         // TODO: `dyn`, `impl`, etc.
         match self.current_token() {
             // `T`
             Token::Ident(ident) => {
                 self.advance();
-                type_ = Type::resolve_builtin(ident);
+                Type::resolve_builtin(ident)
             }
 
             // `&T` or `&mut T`
@@ -179,10 +213,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let mutable = &Token::Keyword(Keyword::Mut) == self.current_token();
 
-                type_ = Type::Reference {
+                Type::Reference {
                     ty: Box::new(self.parse_type()),
                     mutable,
-                };
+                }
             }
 
             // `()` or Tuple
@@ -192,7 +226,7 @@ impl<'a> Parser<'a> {
                 // Unit: ()
                 if let Token::CloseParen = self.current_token() {
                     self.advance();
-                    type_ = Type::Unit;
+                    Type::Unit
                 // Tuple: (A, B, C, ..)
                 } else {
                     let mut tuple_types = Vec::new();
@@ -215,7 +249,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    type_ = Type::Tuple(tuple_types);
+                    Type::Tuple(tuple_types)
                 }
             }
 
@@ -230,8 +264,6 @@ impl<'a> Parser<'a> {
                 parser_error!(self.file_path, self.current_span(), "Expected a type component. Found `{}`", x);
             }
         }
-        
-        type_
     }
 
     pub fn parse_trait_definition(&self) -> Node<ast::Trait> {
@@ -970,20 +1002,33 @@ impl<'a> Parser<'a> {
                 expression = self.parse_numeric_literal(number, false);
             }
 
-            // Identifier or Constructor
+            // Identifier, Constructor, or FunctionCall
             Token::Ident(ident) => {
                 self.advance();
 
-                // FieldConstructor
-                if let Token::OpenCurlyBrace = self.current_token() {
-                    expression = self.parse_field_constructor(ident);
-                }
-                // Just an identifier
-                else { 
-                    expression = ast::Expression::Ident {
-                        name: ident,
-                        ty: Type::Unknown,
-                    };
+                match self.current_token() {
+                    // FieldConstructor
+                    Token::OpenCurlyBrace => {
+                        expression = self.parse_field_constructor(ident);
+                    }
+
+                    // FunctionCall
+                    Token::OpenParen => {
+                        let inputs = self.parse_function_call_inputs();
+                        expression = ast::Expression::FunctionCall {
+                            name: ident,
+                            inputs,
+                            ty: Type::Unknown,
+                        };
+                    }
+
+                    // Just an identifier
+                    _ => {
+                        expression = ast::Expression::Ident {
+                            name: ident,
+                            ty: Type::Unknown,
+                        };
+                    }
                 }
             }
 
@@ -997,10 +1042,37 @@ impl<'a> Parser<'a> {
 
     //////////////////// EXPRESSION HELPER FUNCTIONS ////////////////////
 
+    fn parse_function_call_inputs(&self) -> Vec<Node<ast::Expression>> {
+        // Eat opening `(`
+        self.advance();
+
+        let mut inputs = Vec::new();
+
+        loop {
+            // Allow trailing comma
+            if let Token::Comma = self.current_token() {
+                parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed in function call inputs following the final parameter");
+            }
+
+            if let Token::CloseParen = self.current_token() {
+                self.advance();
+                break;
+            }
+
+            inputs.push(self.parse_expression());
+
+            if let Token::Comma = self.current_token() {
+                self.advance();
+            }
+        }
+
+        inputs
+    }
+
     fn parse_numeric_literal(&self, number: &usize, negative: bool) -> ast::Expression {
         self.advance();
 
-        // `#.` -> Floating point number
+        // `#.` -> must be floating point number
         if let Token::Dot = self.current_token() {
             self.advance();
             let mut float: f64 = if let Token::Number(decimal) = self.current_token() {
@@ -1010,7 +1082,7 @@ impl<'a> Parser<'a> {
             } else {
                 // Don't allow `#.type` to avoid struct-field confusion
                 if let Token::Ident(_) = self.current_token() {
-                    parser_error!(self.file_path, self.current_span(), "Floating point numbers with type-specifiers must include decimal values (for example, write `1.0f32` instead of `1.f32`)");
+                    parser_error!(self.file_path, self.current_span(), "Floating point numbers with trailing decimal points cannot have type specifiers (use `1.0f32` or `1f32` instead of `1.f32`)");
                 }
 
                 // `#.` -> `#.0`
@@ -1039,33 +1111,41 @@ impl<'a> Parser<'a> {
                 ty,
             }
         }
-        // No decimal -> Integer
+        // No decimal -> could be any builtin
         else {
-            let mut integer: isize = number.to_string().parse().expect("parse integer");
-
-            if negative {
-                integer = -integer;
-            }
-
             let ty = if let Token::Ident(type_specifier) = self.current_token() {
                 self.advance();
-                let integer_type = Type::resolve_builtin(type_specifier);
-                if !integer_type.is_integer() {
-                    parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid integer type specifier", type_specifier);
+                let specified = Type::resolve_builtin(type_specifier);
+                if !specified.is_numeric() {
+                    parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid type specifier", type_specifier);
                 }
                 
-                // Only signed integers can be negative
-                if negative && !integer_type.is_signed_integer() {
+                // Only signed integers and floats can be negative
+                if negative && !(specified.is_signed_integer() || specified.is_float()) {
                     parser_error!(self.file_path, self.previous_span(), "Only signed types can be negative (got unsigned type, `{}`)", type_specifier);
                 }
 
-                integer_type
+                specified
             } else {
                 Type::Unknown
             };
 
+            let value = if ty.is_integer() { // parse integer
+                let mut integer: isize = number.to_string().parse().expect("parse integer");
+
+                // This is already confirmed valid
+                if negative {
+                    integer = -integer;
+                }
+
+                Literal::Integer(integer)
+            } else { // Already confirmed that only other case is float
+                let float = format!("{}", number).parse().expect("parse float");
+                Literal::Float(float)
+            };
+
             ast::Expression::Literal {
-                value: Literal::Integer(integer),
+                value,
                 ty,
             }
         }

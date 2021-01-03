@@ -1,4 +1,5 @@
 pub mod codegen;
+pub mod jit;
 
 /* 
 TODO:

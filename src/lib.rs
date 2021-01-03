@@ -1,7 +1,20 @@
 pub mod frontend;
 pub mod backend;
 
+
 pub use proc_macros::{link, export};
+
+#[macro_export]
+macro_rules! FFI {
+    ($f:ident) => {
+        (stringify!($f), $f as *const u8)
+    }
+}
+
+pub mod prelude {
+    pub use crate::FFI;
+    pub use crate::backend::jit::{JITContextBuilder, JITContext};
+}
 
 
 // FIXME: I want these macros to be private within the crate
@@ -22,38 +35,6 @@ pub(crate) mod macros {
     macro_rules! log {
         ($($e:tt)*) => {};
     }
-}
-
-
-/// Creates a JIT-compiled Jitter context using the specified `.jitter` file
-pub fn create_local_context(path: &str) -> backend::codegen::JITContext {
-    #[cfg(feature = "benchmark")]
-    let now = std::time::Instant::now();
-
-
-    let input = &std::fs::read_to_string(path).unwrap();
-
-    let tokens = frontend::lex::Lexer::lex_str(path.as_ref(), input, true);
-    // log!("Tokens:\n{:#?}", tokens);
-
-    let parser = frontend::parse::Parser::new(path, tokens);
-    let ast = parser.parse_ast();
-    // log!("AST:\n{:#?}", ast);
-
-    let validation_context = frontend::validate::validate_ast(ast).unwrap();
-
-    let mut jit = backend::codegen::JITContext::new();
-    
-    // validation_context is dropped here along with the input strings
-    jit.translate(validation_context).unwrap();
-
-
-    // NOTE: Do not use `println` prior to this call if analyzing compile time. 
-    // Printing is slow and irregular. Use `log!` with feature `benchmark`
-    #[cfg(feature = "benchmark")]
-    println!("Running time: {}ms", now.elapsed().as_micros() as f32 / 1000.0);
-
-    jit
 }
 
 

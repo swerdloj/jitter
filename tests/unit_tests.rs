@@ -29,7 +29,7 @@ mod tests {
 
     #[test]
     fn parser() {
-        let path = "./tests/test.jitter";
+        let path = "./tests/parse_test.jitter";
         let input = &std::fs::read_to_string(path).unwrap();
 
         let tokens = Lexer::lex_str(path, input, true);
@@ -78,6 +78,7 @@ mod tests {
             Token::Ident("_1test"),
             Token::Ident("test1_"),
             // Keywords
+            Token::Keyword(Keyword::Extern),
             Token::Keyword(Keyword::Enum),
             Token::Keyword(Keyword::For),
             Token::Keyword(Keyword::Fn),

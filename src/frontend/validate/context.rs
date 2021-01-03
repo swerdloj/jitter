@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use ast::Statement;
+
 use crate::frontend::parse::ast;
 
 use super::types::Type;
@@ -120,9 +122,11 @@ impl<'input> TypeTable<'input> {
 }
 
 pub struct FunctionDefinition<'input> {
-    // (name, type, mutable)
-    parameters: Vec<(&'input str, Type<'input>, bool)>,
-    return_type: Type<'input>,
+    /// Parameters in order of definition (name, type, mutable)
+    pub parameters: Vec<(&'input str, Type<'input>, bool)>,
+    /// Specified function return type
+    pub return_type: Type<'input>,
+    pub is_extern: bool,
 }
 
 struct Scopes<'input> {
@@ -219,11 +223,49 @@ impl<'a> Context<'a> {
     }
 
     /// Validates and takes ownership of an AST
-    pub fn validate(&mut self, mut ast: ast::AST<'a>) -> Result<(), String> {
+    pub fn validate(&mut self, mut ast: ast::AST<'a>) -> Result<(), String> {        
+        // Registration pass (gathers contextual information)
+        // TODO: These need to happen in a particular order
+        for node in &ast {
+            // TODO: First, need to look through the AST and do the following:
+            match node {
+                ast::TopLevel::ExternBlock(externs) => {
+                    for prototype in &externs.item {
+                        for param in prototype.parameters.iter() {
+                            self.types.assert_valid(&param.field_type)?;
+                        }
+                        self.register_function(prototype, true)?;
+                    }
+                }
+                ast::TopLevel::Function(function) => {
+                    // TODO: Build table of functions
+                }
+                ast::TopLevel::Trait(trait_) => {
+                    // TODO: Build table of traits
+                }
+                ast::TopLevel::Impl(impl_) => {
+                    // TODO: Register trait implementations
+                }
+                ast::TopLevel::Struct(struct_) => {
+                    // TODO: Build table of types
+                }
+                ast::TopLevel::ConstDeclaration => {
+                    // TODO: Declare constant in global scope
+                }
+                ast::TopLevel::UseStatement => {
+                    // TODO: Build symbol/alias table
+                }
+            }
+        }
+
+        // Validation pass
         for node in &mut ast {
             match node {
+                ast::TopLevel::ExternBlock(externs) => {
+                    // nothing to do
+                }
                 ast::TopLevel::Function(function) => {
-                    self.register_function(function)?;
+                    self.validate_function(function)?;
                 }
 
                 ast::TopLevel::Trait(trait_) => {
@@ -348,26 +390,32 @@ impl<'a> Context<'a> {
         }
     }
 
+    // Registers a function's name and assigns internal types. Validates return type.
+    pub fn register_function(&mut self, prototype: &ast::FunctionPrototype<'a>, is_extern: bool) -> Result<(), String> {
+        self.types.assert_valid(&prototype.return_type)?;
+        
+        self.functions.insert(
+            prototype.name,
+            FunctionDefinition {
+                parameters: prototype.parameters.iter().map(|param| {
+                        let field_name = param.field_name;
+                        (field_name, param.field_type.clone(), param.mutable)
+                    }).collect(),
+                return_type: prototype.return_type.clone(),
+                is_extern,
+            }
+        ).map(|_already_existing| {
+            return Err::<(), String>(format!("Function `{}` is already defined", prototype.name));
+        });
+
+        Ok(())
+    }
 
     // TODO: Handle `self` parameter -- needs context of `impl`
     //       `Self` type must be handled similarly
     /// Register a function signature, then validate its contents
-    pub fn register_function(&mut self, function: &mut ast::Function<'a>) -> Result<(), String> {
-        self.types.assert_valid(&function.prototype.return_type)?;
-        
-        // Registers a function's name and assigns internal types
-        self.functions.insert(
-            function.prototype.name,
-            FunctionDefinition {
-                parameters: function.prototype.parameters.iter().map(|param| {
-                        let field_name = param.field_name;
-                        (field_name, param.field_type.clone(), param.mutable)
-                    }).collect(),
-                return_type: function.prototype.return_type.clone()
-            }
-        ).map(|_already_existing| {
-            return Err::<(), String>(format!("Function `{}` is already defined", function.prototype.name));
-        });
+    pub fn validate_function(&mut self, function: &mut ast::Function<'a>) -> Result<(), String> {        
+        self.register_function(&function.prototype, false)?;
 
         // Create a new scope containing function inputs
         self.scopes.push_scope();
@@ -466,7 +514,35 @@ impl<'a> Context<'a> {
             }
 
             ast::Statement::Assign { variable, operator, expression } => {
-                // todo!()
+                // Desugar op-assignments
+                if operator.item != ast::AssignmentOp::Assign {
+                    let new_op = match operator.item {
+                        ast::AssignmentOp::Assign => unreachable!(),
+                        ast::AssignmentOp::AddAssign => ast::BinaryOp::Add,
+                        ast::AssignmentOp::SubtractAssign => ast::BinaryOp::Subtract,
+                        ast::AssignmentOp::MultiplyAssign => ast::BinaryOp::Multiply,
+                        ast::AssignmentOp::DivideAssign => ast::BinaryOp::Divide,
+                    };
+
+                    operator.item = ast::AssignmentOp::Assign;
+
+                    expression.item = ast::Expression::BinaryExpression {
+                        lhs: Box::new(ast::Node::new(ast::Expression::Ident {
+                            name: variable,
+                            ty: Type::Unknown,
+                        }, expression.span)),
+                        op: ast::Node::new(new_op, operator.span),
+                        rhs: Box::new(expression.clone()),
+                        ty: Type::Unknown,
+                    }
+                }
+
+                let var_data = self.scopes.get_variable(variable)?;
+                if !var_data.mutable {
+                    return Err(format!("Cannot assign to immutable variable `{}`", variable));
+                }
+
+                self.validate_expression(expression)?;
             }
 
             ast::Statement::Return { expression } => {
@@ -623,8 +699,33 @@ impl<'a> Context<'a> {
                 Ok(field_type)
             }
 
-            ast::Expression::FunctionCall { function, inputs } => {
-                todo!()
+            ast::Expression::FunctionCall { name, inputs, ty } => {
+                // Avoids requiring iter_mut() with zip()
+                // Avoids mutable + immutable borrow of self
+                let mut input_types = Vec::new();
+                for input_expr in inputs.iter_mut() {
+                    input_types.push(
+                        self.validate_expression(input_expr)?
+                    );
+                }
+
+                let definition = self.functions.get(name)
+                    .ok_or(format!("Could not find function `{}`", name))?;
+
+                if definition.parameters.len() != inputs.len() {
+                    return Err(format!("Function `{}` accepts {} parameters, but {} were passed", name, definition.parameters.len(), inputs.len()));
+                }
+
+                // Note that the evaluation order here is the same as the input order
+                for (i, (given_type, (param_name, param_type, _mutable))) in input_types.iter().zip(definition.parameters.iter()).enumerate() {
+                    if given_type != param_type {
+                        return Err(format!("Parameter #{} (`{}`) of call to `{}` has type `{}`, but found type `{}`", i, param_name, name, param_type, given_type));
+                    }
+                }
+
+                *ty = definition.return_type.clone();
+
+                Ok(definition.return_type.clone())
             }
 
             ast::Expression::Block(block) => {
@@ -659,7 +760,7 @@ impl<'a> Context<'a> {
             ast::Expression::UnaryExpression { ty, .. } => ty.clone(), 
             ast::Expression::FieldConstructor { type_name, .. } => Type::User(type_name),
             ast::Expression::FieldAccess { ty, .. } => ty.clone(),
-            ast::Expression::FunctionCall { function, inputs } => todo!(),
+            ast::Expression::FunctionCall { ty, .. } => ty.clone(),
             ast::Expression::Block(block) => block.ty.clone(),
             ast::Expression::Literal { ty, .. } => ty.clone(),
             ast::Expression::Ident { ty, .. } => ty.clone(),

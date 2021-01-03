@@ -1,186 +1,25 @@
-// References: 
-// https://github.com/bytecodealliance/simplejit-demo/blob/main/src/jit.rs
-// https://github.com/bytecodealliance/wasmtime/blob/main/cranelift/simplejit/examples/simplejit-minimal.rs
-// https://github.com/CraneStation/kaleidoscope-cranelift
-
 use crate::frontend::parse::ast;
 use crate::frontend::validate::context::Context as ValidationContext;
 use crate::frontend::validate::types::Type as CompilerType;
 
 use cranelift::prelude::*;
-use cranelift_module::{Module, Linkage, DataContext};
-use cranelift_simplejit::{SimpleJITBuilder, SimpleJITModule};
-
-use std::collections::HashMap;
-
-/// Contains all information needed to JIT compile and run the generated code
-pub struct JITContext {
-    // FIXME: How is `Context` related to functions?
-    fn_builder_context: FunctionBuilderContext,
-    fn_context: codegen::Context,
-    
-    data_context: DataContext,
-
-    module: SimpleJITModule,
-
-    // TEMP: for testing
-    functions: HashMap<String, cranelift_module::FuncId>,
-
-    pointer_type: Type,
-}
-
-impl JITContext {
-    // TODO: Allow optimization settings to be passed in
-    // TODO: Accept/determine target ISA
-    // TODO: Declare functions (using validation context) first, then translate their bodies
-    pub fn new() -> Self {
-        let mut settings = settings::builder();
-        // can also do "speed_and_size"
-        settings.set("opt_level", "speed").expect("Optimization");
-        
-        let isa_builder = isa::lookup(target_lexicon::Triple::host()).expect("isa");
-        let isa = isa_builder.finish(settings::Flags::new(settings));
-
-        let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-        let module = SimpleJITModule::new(builder);
-
-        let pointer_type = module.target_config().pointer_type();
-        crate::log!("Pointer type is: {}\n", pointer_type);
-
-        Self {
-            fn_builder_context: FunctionBuilderContext::new(),
-            fn_context: module.make_context(),
-            data_context: DataContext::new(),
-            module,
-
-            // TEMP: Might want to keep this or make it optional depending on usage
-            functions: HashMap::new(),
-
-            pointer_type,
-        }
-    }
-
-    // TODO: Need a way to verify signature
-    pub fn get_fn(&mut self, id: &str) -> *const u8 {
-        let func_id = self.functions.get(id).expect("no such function");
-        self.module.get_finalized_function(*func_id)
-    }
-
-    // NOTE:
-    // All code represented by the validation context is assumed to be valid
-    pub fn translate(&mut self, validation_context: ValidationContext) -> Result<(), String> {
-        // TODO: Use validation context to declare all functions first
-        // for function in &validation_context.functions {
-        // }
-
-
-        for node in &validation_context.ast {
-            match node {
-                ast::TopLevel::Function(function) => {
-                    self.generate_function(&function, &validation_context)?;
-                }
-
-                ast::TopLevel::Trait(trait_) => {
-                    todo!()
-                }
-
-                ast::TopLevel::Impl(impl_) => {
-                    todo!()
-                }
-
-                // Struct informs the compiler of raw data. There is nothing to translate (except impls).
-                ast::TopLevel::Struct(_) => {
-                    // Nothing to do here
-                }
-
-                ast::TopLevel::ConstDeclaration => {
-                    todo!()
-                }
-
-                ast::TopLevel::UseStatement => {
-                    todo!()
-                }
-            }
-        }
-
-        // TODO: How to print all of the generated IR?
-
-        Ok(())
-    }
-
-    // TODO: How would structs, etc. work?
-    fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
-        // TEMP: debug
-        crate::log!("Generating function `{}`:\n", function.prototype.name);
-
-        // Define the function parameters
-        for parameter in &function.prototype.parameters.item {
-            let param_type = parameter.field_type.ir_type(&self.pointer_type);
-            
-            self.fn_context.func.signature.params.push(
-                AbiParam::new(param_type)
-            );
-        }
-        
-        // Set return variable
-        let return_type = function.prototype.return_type.ir_type(&self.pointer_type);
-
-        if return_type != types::INVALID {
-            self.fn_context.func.signature.returns.push(
-                AbiParam::new(return_type)
-            );
-        }
-        
-        let mut function_translator = FunctionTranslator {
-            fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
-            pointer_type: &self.pointer_type,
-            data: super::DataMap::new(),
-            validation_context,
-        };
-        
-        // Generates IR, then finalizes the function, making it ready for the module
-        function_translator.translate_function(function, return_type)?;
-        // Performs constant folding (only optimization for now)
-        cranelift_preopt::optimize(&mut self.fn_context, self.module.isa()).expect("Optimize");
-        
-        // Initial declaration (C-style?)
-        let id = self.module
-            .declare_function(function.prototype.name, Linkage::Local, &self.fn_context.func.signature)
-            .map_err(|e| e.to_string())?;
-        
-        // Define the function
-        self.module
-            .define_function(id, &mut self.fn_context, &mut codegen::binemit::NullTrapSink{})
-            .map_err(|e| e.to_string())?;
-
-        // Reset the context for the next function
-        self.module.clear_context(&mut self.fn_context);
-
-        // FIXME: Is this the correct location? Would probably want to declare all functions at once,
-        //        then define them individually, then finalize them all at once
-        // Finalizes the function, making it ready for use
-        self.module.finalize_definitions();
-
-        // TEMP: for testing
-        self.functions.insert(function.prototype.name.to_owned(), id);
-
-        Ok(())
-    }
-}
+// for trait functions
+use cranelift_module::Module;
 
 //////////// CLIF Translation ////////////
 
 // Translates a function and its contents into IR
-struct FunctionTranslator<'a> {
-    fn_builder: FunctionBuilder<'a>,
-    pointer_type: &'a Type,
+pub struct FunctionTranslator<'a> {
+    pub pointer_type: &'a Type,
+    pub fn_builder: FunctionBuilder<'a>,
+    pub module: &'a mut cranelift_simplejit::SimpleJITModule,
     // Maps `Variable`s to names and `StackSlots` to addresses
-    data: super::DataMap,
-    validation_context: &'a ValidationContext<'a>,
+    pub data: super::DataMap,
+    pub validation_context: &'a ValidationContext<'a>,
 }
 
 impl FunctionTranslator<'_> {
-    fn translate_function(&mut self, function: &ast::Function, return_type: Type) -> Result<(), String> {                
+    pub fn translate_function(&mut self, function: &ast::Function, return_type: Type) -> Result<(), String> {                        
         // Create the function's entry block with appropriate function parameters
         let entry_block = self.fn_builder.create_block();
         self.fn_builder.append_block_params_for_function_params(entry_block);
@@ -217,7 +56,8 @@ impl FunctionTranslator<'_> {
         self.fn_builder.finalize();
         
         // TEMP: debug (prints function BEFORE optimizations)
-        crate::log!("{}", self.fn_builder.display(None));
+        // FIXME: Can't print FFI calls (panics)
+        // crate::log!("{}", self.fn_builder.display(self.module.isa()));
         
         Ok(())
     }
@@ -406,8 +246,47 @@ impl FunctionTranslator<'_> {
                 )
             }
 
-            ast::Expression::FunctionCall { function, inputs } => {
-                todo!()
+            ast::Expression::FunctionCall { name, inputs, ty } => {
+                // Build the function call signature
+                let mut call_signature = self.module.make_signature();
+                
+                for arg in inputs {
+                    let arg_type = self.validation_context.get_expression_type(arg)?;
+                    call_signature.params.push(
+                        AbiParam::new(arg_type.ir_type(self.pointer_type))
+                    );
+                }
+
+                if !ty.is_unknown() {
+                    call_signature.returns.push(AbiParam::new(ty.ir_type(self.pointer_type)));
+                }
+
+                // Reference the function
+                // FIXME: What is this doing regarding the existing definition?
+                // let func_id = self.module.declare_function(name, Linkage::Import, &call_signature)
+                //     .map_err(|e| e.to_string())?;
+
+                // FIXME: Isn't this better than the above? What is the difference?
+                let func_id = if let cranelift_module::FuncOrDataId::Func(id) = self.module.declarations().get_name(name).expect("get_function_id_for_call") {
+                    id
+                } else {
+                    // NOTE: The given AST is assumed to be valid
+                    unreachable!();
+                    // return Err(format!("Not a function: {}", name));
+                };
+            
+                let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
+
+                // Obtain argument values
+                let mut values = Vec::new();
+                for arg in inputs {
+                    values.push(self.translate_expression(arg)?);
+                }
+
+                let call = self.fn_builder.ins().call(func_ref, &values);
+                
+                // Jitter supports only single returns -> always index 0
+                self.fn_builder.inst_results(call)[0]
             }
 
             ast::Expression::Block(block) => {

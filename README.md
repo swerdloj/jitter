@@ -18,6 +18,8 @@ Most notably, Rust is rather strict and for good reason. These reasons, however,
 
 Thus, Jitter does not aim to be fast, safe, or low-level. Instead, it seeks to promote *good* (in my opinion) design patterns while being easy to work with and providing functionality not found in traditional languages.
 
+---
+
 ## Motivations
 I like to use Python as my antithesis of a good language.  
 
@@ -31,6 +33,8 @@ Additionally, Jitter is fully compatible with C and C++.
 I went with a scripting language for the sake of being able to write embedded scripts without constantly needing to recompile an entire project. The simple FFI described below makes hooking Jitter into Rust feel exactly like it should: like writing Rust.
 
 The JIT compiler is also extremely fast (thanks to Cranelift) and produces good machine code (although LLVM's is faster).
+
+---
 
 ## Future Plans
 I have plans for Jitter beyond the scope of a scripting language. I won't detail those plans here, but they involve "main hijacking" and custom syntax to create languages which are frameworks in themselves.

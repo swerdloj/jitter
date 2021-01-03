@@ -214,6 +214,23 @@ fn start(window: Window) {
 }
 ```
 
+Alternatively, frameworks could operate as traits for programs. For example:
+```Rust
+// This could automatically import the needed modules
+@framework renderer
+
+// Require functions, their inputs, and their outputs are specified by the framework
+fn init(..) {..}
+
+fn update(..) {..}
+
+// no main()
+```
+
+Control of the Jitter program would be given to the framework host, and so long as the required functions exist (as specified by the framework), hot reloading would be the primary development mechanism.
+
+This approach lends itself particularly well to Jitter's overarching goals. `@persistent` is especially useful here.
+
 ---
 **Potential Paper**
 - 1 - Libraries as Languages

@@ -4,7 +4,8 @@ use proc_macro::TokenStream;
 
 TODO:
 
-Import Jitter function to Rust
+IMPORTS:
+Jitter function from Rust
 ```
 #[jitter::link]
 extern "Jitter" { 
@@ -12,16 +13,48 @@ extern "Jitter" {
 }
 ```
 
-would generate the following:
+would generate:
 
 
 ```
-
 fn multiply(a: i32, b: i32) -> i32 {
-    static __jitter__multiply: fn(i32, i32) -> i32 = std::mem::transmute(static_jit_context.get("multiply"));
+    static __jitter_multiply: fn(i32, i32) -> i32 = std::mem::transmute(static_jit_context.get("multiply"));
     unsafe {
         __jitter__multiply(a, b)
     }
+}
+```
+
+--------------------------------
+
+EXPORTS:
+Rust functions from Jitter
+```
+#[jitter::export]
+fn multiply(a: i32, b: i32) -> i32 {
+    a * b
+}
+
+```
+
+would generate:
+
+```
+#[no_mangle]
+extern "C" fn multiply(a: i32, b: i32) -> i32 {
+    a * b
+}
+
+// and (somehow) call the following code:
+unsafe {
+    jitter::global_context.link_fn(
+        FFI_FunctionDefinition {
+            fn_pointer: multiply as *const i8,
+            name: "multiply",
+            parameters: vec![("a", "i32"), ("b", "i32")],
+            returns: "i32"
+        }
+    );
 }
 ```
 
