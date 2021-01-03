@@ -1,31 +1,15 @@
-pub mod codegen;
+/// Contains functionality for translating an AST into CLIF
+mod codegen;
+/// Contains the JIT driver
 pub mod jit;
 
 /* 
 TODO:
 
-    1. Define functions in the language
-    2. JIT the functions and store code
-    3. Interpret inputs such that those functions can be called
+    1. Interpret inputs such that those functions can be called
         - This should support REPL-style addition of functions
 
-    4. Get structs working
-
-    5. Get struct impls working
-
-    6. Allow use of Rust-defined functions
-    7. Function args & returns should be valid
-
-       Rust Code:
-           #[language_link]
-           fn name(a: u32, b: u32) -> u32 {..}
-    
-       Language Code:
-           extern "Rust" fn name(a: u32, b: u32) -> u32;
-           ...
-           let x = name(1, 2);
-
-       Need to ensure types are compatible and signatures can be understood
+    2. Get struct impls working
 
 */
 

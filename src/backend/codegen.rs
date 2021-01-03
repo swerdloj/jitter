@@ -3,10 +3,14 @@ use crate::frontend::validate::context::Context as ValidationContext;
 use crate::frontend::validate::types::Type as CompilerType;
 
 use cranelift::prelude::*;
-// for trait functions
-use cranelift_module::Module;
+use cranelift_module::Module; // for trait functions
 
 //////////// CLIF Translation ////////////
+
+// This file simply generates IR -- nothing more
+
+// It might be possible to reuse this module for different targets
+// such as generating standalone executables
 
 // Translates a function and its contents into IR
 pub struct FunctionTranslator<'a> {

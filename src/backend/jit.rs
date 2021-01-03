@@ -84,6 +84,7 @@ pub struct JITContext {
     // TODO: Store additional information such as (id, is_defined, param_count, etc.)
     functions: HashMap<String, cranelift_module::FuncId>,
 
+    /// Target architecture's pointer type
     pointer_type: Type,
 }
 
@@ -127,7 +128,6 @@ impl JITContext {
         for (name, definition) in &validation_context.functions {
             self.forward_declare_function(name, definition)?;
         }
-
 
         for node in &validation_context.ast {
             match node {
