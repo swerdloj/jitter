@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use ast::Statement;
-
 use crate::frontend::parse::ast;
 
 use super::types::Type;
@@ -121,12 +119,20 @@ impl<'input> TypeTable<'input> {
     }
 }
 
-pub struct FunctionDefinition<'input> {
-    /// Parameters in order of definition (name, type, mutable)
-    pub parameters: Vec<(&'input str, Type<'input>, bool)>,
-    /// Specified function return type
-    pub return_type: Type<'input>,
-    pub is_extern: bool,
+
+struct VariableData<'input> {
+    /// Is the variable mutable
+    pub mutable: bool,
+    // Is it local or global
+    // local: bool,
+    /// Type of the variable
+    pub ty: Type<'input>,
+}
+
+impl<'input> VariableData<'input> {
+    fn new(mutable: bool, ty: Type<'input>) -> Self {
+        Self { mutable, ty }
+    }
 }
 
 struct Scopes<'input> {
@@ -172,27 +178,91 @@ impl<'input> Scopes<'input> {
     }
 }
 
-struct VariableData<'input> {
-    /// Is the variable mutable
-    pub mutable: bool,
-    // Is it local or global
-    // local: bool,
-    /// Type of the variable
-    pub ty: Type<'input>,
+
+pub struct FunctionDefinition<'input> {
+    /// Function parameters (field_name, field_type, mutable) in order
+    pub parameters: Vec<(&'input str, Type<'input>, bool)>,
+    pub return_type: Type<'input>,
+    pub is_extern: bool,
+    pub is_validated: bool,
 }
 
-impl<'input> VariableData<'input> {
-    fn new(mutable: bool, ty: Type<'input>) -> Self {
-        Self { mutable, ty }
+pub struct FunctionTable<'input> {
+    // Map of (name -> data)
+    pub functions: HashMap<&'input str, FunctionDefinition<'input>>
+}
+
+impl<'input> FunctionTable<'input> {
+    fn new() -> Self {
+        Self {
+            functions: HashMap::new(),
+        }
+    }
+
+    // FIXME: A few copies and clones, but nothing bad
+    fn forward_declare_function(&mut self, validated_prototype: &ast::FunctionPrototype<'input>, is_extern: bool) -> Result<(), String> {
+        if self.functions.contains_key(validated_prototype.name) {
+            return Err(format!("Function `{}` already exists", validated_prototype.name));
+        }
+
+        let parameters = validated_prototype.parameters.iter().map(|param| {
+            (param.field_name, param.field_type.clone(), param.mutable)
+        }).collect();
+
+        let definition = FunctionDefinition {
+            parameters,
+            return_type: validated_prototype.return_type.clone(),
+            is_extern,
+            is_validated: false,
+        };
+
+        self.functions.insert(validated_prototype.name, definition);
+
+        Ok(())
+    }
+
+    fn __get_mut(&mut self, name: &str) -> Result<&mut FunctionDefinition<'input>, String> {
+        self.functions.get_mut(name)
+            .ok_or(format!("Could not find function `{}`", name))
+    }
+
+    fn __get(&self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
+        self.functions.get(name)
+            .ok_or(format!("Could not find function `{}`", name))
+    }
+
+    // TODO: This and `get_validated_function_definition` may not ever be used
+    //       (this functionality exists in finalized JIT product)
+    fn mark_function_validated(&mut self, name: &str) -> Result<(), String> {
+        self.__get_mut(name)?
+            .is_validated = true;
+        Ok(())
+    }
+
+    // TODO: Will this ever be used?
+    fn get_validated_function_definition(&mut self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
+        let function = self.__get(name)?;
+
+        if !function.is_validated {
+            // FIXME: This should not be possible
+            Err(format!("Function `{}` was not validated", name))
+        } else {
+            Ok(function)
+        }
+    }
+
+    /// Returns a `FunctionDefinition` that is not guarenteed to have been
+    /// successfully validated
+    fn get_unchecked_function_definition(&mut self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
+        self.__get(name)
     }
 }
-
 
 ///////////////////// Main Functionality /////////////////////
 
 pub struct Context<'input> {
     /// Function signatures
-    pub functions: HashMap<&'input str, FunctionDefinition<'input>>,
+    pub functions: FunctionTable<'input>,
     /// Struct signatures
     structs: HashMap<&'input str, StructDefinition<'input>>,
     /// Type information
@@ -207,89 +277,69 @@ pub struct Context<'input> {
     last_return_type: Type<'input>,
 }
 
-impl<'a> Context<'a> {
+impl<'input> Context<'input> {
     /// Creates an empty validation context
-    pub fn new(/*ast: ast::AST<'a>*/) -> Self {
+    pub fn new() -> Self {
         Self {
-            functions: HashMap::new(),
+            functions: FunctionTable::new(),
             structs: HashMap::new(),
             types: TypeTable::new(),
             scopes: Scopes::new(),
             // Does not allocate any heap memory
-            ast: ast::AST::with_capacity(0),
+            ast: ast::AST::placeholder(),
 
             last_return_type: Type::Unknown,
         }
     }
 
     /// Validates and takes ownership of an AST
-    pub fn validate(&mut self, mut ast: ast::AST<'a>) -> Result<(), String> {        
-        // Registration pass (gathers contextual information)
-        // TODO: These need to happen in a particular order
-        for node in &ast {
-            // TODO: First, need to look through the AST and do the following:
-            match node {
-                ast::TopLevel::ExternBlock(externs) => {
-                    for prototype in &externs.item {
-                        for param in prototype.parameters.iter() {
-                            self.types.assert_valid(&param.field_type)?;
-                        }
-                        self.register_function(prototype, true)?;
-                    }
-                }
-                ast::TopLevel::Function(function) => {
-                    // TODO: Build table of functions
-                }
-                ast::TopLevel::Trait(trait_) => {
-                    // TODO: Build table of traits
-                }
-                ast::TopLevel::Impl(impl_) => {
-                    // TODO: Register trait implementations
-                }
-                ast::TopLevel::Struct(struct_) => {
-                    // TODO: Build table of types
-                }
-                ast::TopLevel::ConstDeclaration => {
-                    // TODO: Declare constant in global scope
-                }
-                ast::TopLevel::UseStatement => {
-                    // TODO: Build symbol/alias table
-                }
+    pub fn validate(&mut self, mut ast: ast::AST<'input>) -> Result<(), String> {
+        // Registration pass (gathers contextual information)    
+        // NOTE: Order matters here
+        // for use_ in &ast.uses {
+            // TODO: Build symbol/alias table
+            //       Must be done first (to avoid collisions and to reference used items)
+        // }
+        for struct_ in &ast.structs {
+            self.register_struct(&struct_)?;
+        }
+        for extern_block in &ast.externs {
+            for prototype in &extern_block.item {
+                self.validate_function_prototype(&prototype)?;
+                self.functions.forward_declare_function(&prototype, true)?;
             }
         }
+        for function in &ast.functions {
+            self.validate_function_prototype(&function.prototype)?;
+            self.functions.forward_declare_function(&function.prototype, false)?;
+        }
+        // for constant in &ast.constants {
+            // TODO: Declare constant in global scope
+        // }
+        // for trait_ in &ast.traits {
+            // TODO: Build table of traits
+        // }
+        // for impl_ in &ast.impls {
+            // TODO: Register trait implementations
+        // }
+        
 
         // Validation pass
-        for node in &mut ast {
-            match node {
-                ast::TopLevel::ExternBlock(externs) => {
-                    // nothing to do
-                }
-                ast::TopLevel::Function(function) => {
-                    self.validate_function(function)?;
-                }
-
-                ast::TopLevel::Trait(trait_) => {
-                    // self.register_trait(trait_)?;
-                    todo!()
-                }
-
-                ast::TopLevel::Impl(impl_) => {
-                    todo!()
-                }
-
-                ast::TopLevel::Struct(struct_) => {
-                    self.register_struct(&struct_)?;
-                }
-
-                ast::TopLevel::ConstDeclaration => {
-                    todo!()
-                }
-
-                ast::TopLevel::UseStatement => {
-                    todo!()
-                }
-            }
+        // TODO:
+        // for use_ in &ast.uses {
+        // }
+        // TODO:
+        // for constant in &ast.constants {
+        // }
+        for function in &mut ast.functions {
+            self.validate_function_body(function)?;
         }
+        // TODO:
+        // for trait_ in &ast.traits {
+        // }
+        // TODO:
+        // for impl_ in &ast.impls {
+        // }
 
         self.ast = ast;
 
@@ -297,7 +347,7 @@ impl<'a> Context<'a> {
     }
 
     /// Registers and lays out a "repr(C)" struct
-    pub fn register_struct(&mut self, struct_: &ast::Struct<'a>) -> Result<(), String> {
+    pub fn register_struct(&mut self, struct_: &ast::Struct<'input>) -> Result<(), String> {
         let needed_padding = |offset, alignment| {
             let misalignment = offset % alignment;
             if misalignment > 0 {
@@ -346,7 +396,7 @@ impl<'a> Context<'a> {
 
     /// Returns the type of a field from a struct, enum, or tuple.  
     /// For referenced types, the underlying type will be used.
-    pub fn get_field_type(&self, ty: &Type<'a>, field: &'a str) -> Result<Type<'a>, String> {
+    pub fn get_field_type(&self, ty: &Type<'input>, field: &'input str) -> Result<Type<'input>, String> {
         match ty {
             // Peel away the references
             Type::Reference { ty: underlying_type, .. } => {
@@ -375,7 +425,7 @@ impl<'a> Context<'a> {
 
     /// Returns the byte offset of a field for the given type.  
     /// Note that the type **must be the base type**. References return errors.
-    pub fn get_field_offset(&self, ty: &Type<'a>, field: &'a str) -> Result<usize, String> {
+    pub fn get_field_offset(&self, ty: &Type<'input>, field: &'input str) -> Result<usize, String> {
         match ty {
             Type::Reference { .. } => Err(format!("Field offsets cannot be obtained from references")),
 
@@ -390,37 +440,23 @@ impl<'a> Context<'a> {
         }
     }
 
-    // Registers a function's name and assigns internal types. Validates return type.
-    pub fn register_function(&mut self, prototype: &ast::FunctionPrototype<'a>, is_extern: bool) -> Result<(), String> {
+    pub fn validate_function_prototype(&self, prototype: &ast::FunctionPrototype) -> Result<(), String> {
         self.types.assert_valid(&prototype.return_type)?;
-        
-        self.functions.insert(
-            prototype.name,
-            FunctionDefinition {
-                parameters: prototype.parameters.iter().map(|param| {
-                        let field_name = param.field_name;
-                        (field_name, param.field_type.clone(), param.mutable)
-                    }).collect(),
-                return_type: prototype.return_type.clone(),
-                is_extern,
-            }
-        ).map(|_already_existing| {
-            return Err::<(), String>(format!("Function `{}` is already defined", prototype.name));
-        });
+
+        for param in &prototype.parameters.item {
+            self.types.assert_valid(&param.field_type)?;
+        }
 
         Ok(())
     }
 
     // TODO: Handle `self` parameter -- needs context of `impl`
     //       `Self` type must be handled similarly
-    /// Register a function signature, then validate its contents
-    pub fn validate_function(&mut self, function: &mut ast::Function<'a>) -> Result<(), String> {        
-        self.register_function(&function.prototype, false)?;
-
-        // Create a new scope containing function inputs
+    // NOTE: The function's parameters are valid at this point
+    pub fn validate_function_body(&mut self, function: &mut ast::Function<'input>) -> Result<(), String> {        
+        // Create a new scope containing the function's parameters
         self.scopes.push_scope();
         for param in &function.prototype.parameters.item {
-            self.types.assert_valid(&param.field_type)?;
             self.scopes.add_var_to_scope(param.field_name, param.mutable, param.field_type.clone())?;
         }
         
@@ -431,6 +467,9 @@ impl<'a> Context<'a> {
         if self.last_return_type == function.prototype.return_type {
             // Reset for the next function
             self.last_return_type = Type::Unknown;
+            
+            // The function is confirmed valid at this point
+            self.functions.mark_function_validated(function.prototype.name)?;
 
             Ok(())
         } else {
@@ -440,7 +479,7 @@ impl<'a> Context<'a> {
 
     /// Validates a block expression/function body.  
     /// Returns the block's type.
-    pub fn validate_block(&mut self, block: &mut ast::BlockExpression<'a>, is_function_body: bool) -> Result<Type<'a>, String> {
+    pub fn validate_block(&mut self, block: &mut ast::BlockExpression<'input>, is_function_body: bool) -> Result<Type<'input>, String> {
         let mut block_type = Type::Unknown;
 
         for statement in &mut block.block.item {
@@ -482,7 +521,7 @@ impl<'a> Context<'a> {
     }
 
     /// Validates a statement & assigns types
-    pub fn validate_statement(&mut self, statement: &mut ast::Statement<'a>) -> Result<(), String> {
+    pub fn validate_statement(&mut self, statement: &mut ast::Statement<'input>) -> Result<(), String> {
         match statement {
             // Ensures the variable is not already in scope and has valid types
             ast::Statement::Let { ident, mutable, ty, value } => {
@@ -571,7 +610,7 @@ impl<'a> Context<'a> {
 
     // TODO: Make sure `ty` is assigned wherever needed
     /// Validates an expression, determining its type. Returns the type of the expression.
-    pub fn validate_expression(&mut self, expression: &mut ast::Expression<'a>) -> Result<Type<'a>, String> {
+    pub fn validate_expression(&mut self, expression: &mut ast::Expression<'input>) -> Result<Type<'input>, String> {
         match expression {
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
                 let l_type = self.validate_expression(lhs)?;
@@ -709,8 +748,7 @@ impl<'a> Context<'a> {
                     );
                 }
 
-                let definition = self.functions.get(name)
-                    .ok_or(format!("Could not find function `{}`", name))?;
+                let definition = self.functions.get_unchecked_function_definition(name)?;
 
                 if definition.parameters.len() != inputs.len() {
                     return Err(format!("Function `{}` accepts {} parameters, but {} were passed", name, definition.parameters.len(), inputs.len()));
@@ -754,7 +792,7 @@ impl<'a> Context<'a> {
 
     // TODO: Could this be moved to an `impl ast::Expression` function?
     /// Returns the type of a **validated** expression
-    pub fn get_expression_type(&self, expression: &ast::Expression<'a>) -> Result<Type<'a>, String> {
+    pub fn get_expression_type(&self, expression: &ast::Expression<'input>) -> Result<Type<'input>, String> {
         let expr_type = match expression {
             ast::Expression::BinaryExpression { ty, .. } => ty.clone(),
             ast::Expression::UnaryExpression { ty, .. } => ty.clone(), 

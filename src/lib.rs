@@ -5,14 +5,55 @@ pub mod backend;
 pub use proc_macros::{link, export};
 
 #[macro_export]
+/// Converts a function identifier into a tuple of (name, address)
+/// This is used by `JITContextBuilder::with_function` for linking Rust functions to Jitter
+/// 
+/// Usage:
+/// ```Rust
+/// let jitter_context = JITContextBuilder::new()
+///     .with_source_path("./path")
+///     .with_function(FFI!(function))
+///     .build();
+/// ```
 macro_rules! FFI {
-    ($f:ident) => {
-        (stringify!($f), $f as *const u8)
+    ($func:ident) => {
+        (stringify!($func), $func as *const u8)
     }
 }
 
+#[macro_export]
+macro_rules! Jitter {
+    ( 
+        // Path group
+        [$($path:expr),+ $(,)?]
+        // Function group
+        $(<- 
+            // Function group body
+            [$($func:ident),+
+        $(,)?])?
+    ) => {
+        JITContextBuilder::new()
+
+        // Path group
+        $(
+            // TODO: Let user enter path without strings. Is that even useful?
+            // .with_source_path(stringify!($path))
+            .with_source_path($path)
+        )+
+        // Function group
+        $(
+            // Function group body
+            $(
+                .with_function((stringify!($func), $func as *const u8))
+            )+
+        )?
+
+        .build()
+    };
+}
+
 pub mod prelude {
-    pub use crate::FFI;
+    pub use crate::Jitter;
     pub use crate::backend::jit::{JITContextBuilder, JITContext};
 }
 

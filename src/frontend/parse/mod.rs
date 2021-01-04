@@ -94,10 +94,10 @@ impl<'a> Parser<'a> {
     // TODO: Might want AST to be a type where each TopLevel
     //       is a field containing lists of those items
     pub fn parse_ast(&self) -> ast::AST {
-        let mut ast = Vec::new();
+        let mut ast = ast::AST::new();
 
         while self.is_anything_unparsed() {
-            ast.push(self.parse_top_level());
+            ast.insert_top_level(self.parse_top_level());
         }
 
         ast

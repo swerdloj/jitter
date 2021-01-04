@@ -49,13 +49,39 @@ Jitter compiles to machine code using Cranelift. The compilation process is stru
 **Textual Input -> Lexer -> Parser -> (Type Checker & Transformer) -> IR Code Generator -> IR Compiler**
 
 Respective input transformations:  
-**String -> [Token] -> AST -> Typed AST -> CLIF -> Machine Code**
+**String -> [Token] -> AST -> (Typed AST + Context Tables) -> CLIF -> Machine Code**
+
+### *Some implementation details*
+
+**Lexer**:  
+The lexer is straight-forward apart from keywords. Keyword lexing is done using a hand-rolled DFA which should have been through a macro. At least it's fast.
+
+**Parser**:  
+The parser is a hand-written recursive descent parser. I have user LALRPOP in the past, but I found it difficult to reason about the program with.  
+The advantage of a recursive descent parser is the ability to prioritize rules.  
+For example, given the rule `A -> B | C`, priority can be given to `B` which can help eliminate some ambiguity.
+
+**AST**:  
+I chose to represent the AST as a struct like so:
+```Rust
+// simplified
+struct AST {
+  functions: Vec<Function>,
+  structs: Vec<Struct>,
+  ...
+}
+```
+The advantage of this representation of an `enum`/tree-based approach is the ability to "lookup" top-level items. For example, functions can all be forward declared by simply iterating over `AST.functions`. No AST traversal needed.
+
+**General frontend notes**:  
+The entire frontend pipeline operates on strings taken from the input (`&'input str`). The only redundant allocations needed are a handful of `Type` clones which are rather cheap.  
+Once compilation is finished, the input and all frontend data structures are dropped simultaneously.
 
 ### *Cranelift*
 The use of Cranelift offers the following advantages:
 - Rust-native API
-  - I wanted to learn and use LLVM for this project, but there just aren't up-to-date or complete resources
-  - The Cranelift API is quite easy to work with, as no FFI is used
+  - I wanted to learn and use LLVM for this project, but I had trouble finding usable resources (especially regarding Rust)
+  - The Cranelift API is quite easy to work with, as it is written in Rust
 - 1:1 mapping of data types
   - Cranelift data types are the same as Rust's: `u8`, `i128`, `f32`, etc. work as expected
 - No pointers
@@ -63,7 +89,8 @@ The use of Cranelift offers the following advantages:
 - Cranelift IR can be used for:
   - JIT compilation
   - Ahead-of-Time compilation
-  - IR Interpreter
+  - IR Interpreter  
+  - CLIF -> LLIR for maximum optimization
 - Simple
   - At the cost of fancy optimizations like LLVM, Cranelift is very simple (and understandable)
   - Dispite the lack of documentation and examples, I found it (somewhat) easy to get started with

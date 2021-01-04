@@ -32,36 +32,43 @@ struct JitterStruct {
 
 fn main() {
     // TODO: growable environment (REPL-style) / hot-reloading
-    let mut jit = JITContextBuilder::new()
-        .with_source_path("./tests/integration_test.jitter")
-        .with_function(FFI!(hello_from_rust))
-        .build();
+    
+    let mut jitter = Jitter! {
+        ["./tests/integration_test.jitter"] <- [hello_from_rust]
+    };
+
+    // The above is equivalent to this:
+
+    // let mut jit = JITContextBuilder::new()
+    //     .with_source_path("./tests/integration_test.jitter")
+    //     .with_function(jitter::FFI!(hello_from_rust))
+    //     .build();
 
     // TEMP: for testing -- eventually replace with #[jitter::link] usage above
     let negate: fn(i32) -> i32 = unsafe { 
-        std::mem::transmute(jit.get_fn("negate")) 
+        std::mem::transmute(jitter.get_fn("negate")) 
     };
 
     let multiply: fn(i32, i32) -> i32 = unsafe { 
-        std::mem::transmute(jit.get_fn("multiply")) 
+        std::mem::transmute(jitter.get_fn("multiply")) 
     };
 
     let struct_test: fn(u8, u16, u16) -> u16 = unsafe { 
-        std::mem::transmute(jit.get_fn("struct_test")) 
+        std::mem::transmute(jitter.get_fn("struct_test")) 
     };
 
     let specified_literals: fn() -> i8 = unsafe { 
-        std::mem::transmute(jit.get_fn("specified_literals")) 
+        std::mem::transmute(jitter.get_fn("specified_literals")) 
     };
 
     let function_calls: fn(u16) -> u16 = unsafe {
-        std::mem::transmute(jit.get_fn("function_calls"))
+        std::mem::transmute(jitter.get_fn("function_calls"))
     };
 
     // TODO: Return stack allocations
     // #[allow(non_snake_case)]
     // let FFI_test: fn(u8, u16, u16) -> JitterStruct = unsafe { 
-    //     std::mem::transmute(jit.get_fn("FFI_test")) 
+    //     std::mem::transmute(jitter.get_fn("FFI_test")) 
     // };
 
     println!("negate(1234560) = {:?}", negate(1234560));

@@ -3,6 +3,7 @@
 
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
+    Box,
     Extern,
     Enum,
     For,
@@ -64,6 +65,7 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Ident(ident) => format!("identifier: {}", ident),
             Token::Keyword(keyword) => {
                 let word = match keyword {
+                    Keyword::Box => "box",
                     Keyword::Extern => "extern",
                     Keyword::Enum => "enum",
                     Keyword::For => "for",
@@ -379,8 +381,22 @@ impl<'input> Lexer<'input> {
 
                 // TODO: This could be simplified quite a bit. Consider a macro?
                 // NOTE: Could just treat everything as idents, then check those for keywords,
-                //       but this is much faster
+                //       but this is faster
                 match it {
+                    // box
+                    'b' => {
+                        if self.is_next('o')? {
+                            self.advance();
+                            if self.is_next('x')? {
+                                self.advance();
+                                if !self.is_next_alphanumeric()? {
+                                    self.advance();
+                                    token = Some(Token::Keyword(self::Keyword::Box));
+                                }
+                            }
+                        }
+                    }
+
                     'e' => {
                         // enum
                         if self.is_next('n')? {

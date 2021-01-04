@@ -52,6 +52,10 @@ impl<'a> JITContextBuilder<'a> {
         self
     }
 
+    // TODO: Compile multiple files instead of just one
+    //       also allow context without source (include standard library)
+    // pub fn add_source_path...
+
     // TODO: Return Result
     pub fn build(self) -> JITContext {
         let mut jit_context = JITContext::new(self.simple_jit_builder);
@@ -124,41 +128,23 @@ impl JITContext {
     // NOTE:
     // All code represented by the validation context is assumed to be valid
     pub fn translate(&mut self, validation_context: ValidationContext) -> Result<(), String> {
-        // TODO: Use validation context to declare all functions first
-        for (name, definition) in &validation_context.functions {
+        // Begin by forward-declaring all possible functions
+        // TODO: Do same for all constant values
+        for (name, definition) in &validation_context.functions.functions {
             self.forward_declare_function(name, definition)?;
         }
 
-        for node in &validation_context.ast {
-            match node {
-                ast::TopLevel::ExternBlock(externs) => {
-                    // already declared above -> nothing to do
-                }
-                ast::TopLevel::Function(function) => {
-                    self.generate_function(&function, &validation_context)?;
-                }
-
-                ast::TopLevel::Trait(trait_) => {
-                    todo!()
-                }
-
-                ast::TopLevel::Impl(impl_) => {
-                    todo!()
-                }
-
-                // Struct informs the compiler of raw data. There is nothing to translate (except impls).
-                ast::TopLevel::Struct(_) => {
-                    // Nothing to do here
-                }
-
-                ast::TopLevel::ConstDeclaration => {
-                    todo!()
-                }
-
-                ast::TopLevel::UseStatement => {
-                    todo!()
-                }
-            }
+        // Translate everything to IR
+        // NOTE: Structs define layouts. They do not need translation.
+        //       Similarly, ExternBlocks are accounted for as functions
+        for function in &validation_context.ast.functions {
+            self.generate_function(function, &validation_context)?;
+        }
+        for trait_ in &validation_context.ast.traits {
+            todo!()
+        }
+        for impl_ in &validation_context.ast.impls {
+            todo!()
         }
 
         // Performs linking
@@ -168,26 +154,6 @@ impl JITContext {
 
         Ok(())
     }
-
-    // This will be called from `extern` blocks within jitter
-    // fn declare_ffi_fn(&mut self, prototype: &ast::FunctionPrototype) -> Result<(), String> {
-    //     if self.functions.contains_key(prototype.name) {
-    //         Err(format!("Function `{}` already exists", prototype.name))
-    //     } else {
-    //         let mut signature = self.module.make_signature();
-
-    //         for x in &prototype.parameters.item {
-                
-    //         }
-
-    //         let func_id = self.module.declare_function(prototype.name, Linkage::Import, &signature)
-    //             .map_err(|e| e.to_string())?;
-            
-    //         self.functions.insert(prototype.name.to_string(), func_id);
-
-    //         Ok(())
-    //     }
-    // }
 
     fn forward_declare_function(&mut self, name: &str, definition: &crate::frontend::validate::context::FunctionDefinition) -> Result<cranelift_module::FuncId, String> {
         if self.functions.contains_key(name) {

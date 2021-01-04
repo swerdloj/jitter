@@ -42,7 +42,60 @@ impl<T> Node<T> {
 ///////////////// AST VARIANTS /////////////////
 
 
-pub type AST<'input> = Vec<TopLevel<'input>>;
+/// An AST represented as indexed parts  
+/// i.e.: All `TopLevel` items exist as fields which can be iterated over
+///
+/// For example, to see all functions defined in the AST,
+/// see `AST.functions`
+pub struct AST<'input> {
+    pub externs:   Vec<Node<ExternBlock<'input>>>,
+    pub functions: Vec<Node<Function<'input>>>,
+    pub traits:    Vec<Node<Trait<'input>>>,
+    pub impls:     Vec<Node<Impl<'input>>>,
+    pub structs:   Vec<Node<Struct<'input>>>,
+     // TODO: These
+    // pub constants: Vec<Node<()>>,
+    // pub uses: Vec<Node<()>>,
+}
+
+impl<'input> AST<'input> {
+    pub fn new() -> Self {
+        Self {
+            externs:   Vec::new(),
+            functions: Vec::new(),
+            traits:    Vec::new(),
+            impls:     Vec::new(),
+            structs:   Vec::new(),
+        }
+    }
+
+    /// Create a placeholder AST with no heap allocations
+    pub(crate) fn placeholder() -> Self {
+        Self {
+            externs:   Vec::with_capacity(0),
+            functions: Vec::with_capacity(0),
+            traits:    Vec::with_capacity(0),
+            impls:     Vec::with_capacity(0),
+            structs:   Vec::with_capacity(0),
+        }
+    }
+
+    // FIXME: This is a bit of indirection that can be avoided by simply
+    //        using `parse_top_level` to directly insert into the AST
+    //        (rather than going through `TopLevel`)
+    pub fn insert_top_level(&mut self, item: TopLevel<'input>) {
+        match item {
+            TopLevel::ExternBlock(i) => self.externs.push(i),
+            TopLevel::Function(i) => self.functions.push(i),
+            TopLevel::Trait(i) => self.traits.push(i),
+            TopLevel::Impl(i) => self.impls.push(i),
+            TopLevel::Struct(i) => self.structs.push(i),
+            // TopLevel::ConstDeclaration => self.constants.(i),
+            // TopLevel::UseStatement => self.uses.push(i),
+            _ => todo!(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum TopLevel<'input> {

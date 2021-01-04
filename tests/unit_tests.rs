@@ -78,6 +78,7 @@ mod tests {
             Token::Ident("_1test"),
             Token::Ident("test1_"),
             // Keywords
+            Token::Keyword(Keyword::Box),
             Token::Keyword(Keyword::Extern),
             Token::Keyword(Keyword::Enum),
             Token::Keyword(Keyword::For),

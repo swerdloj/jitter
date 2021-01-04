@@ -12,6 +12,17 @@ struct Test {
 // empty struct
 struct Test2 {}
 
+// impl
+impl Test {
+    fn impl_fn() -> Test {
+        // constructor
+        Test {
+            field1: test1() + value,
+            field2: value,
+        }
+    }
+}
+
 // fn with fields and no return type
 fn test1(test1: type1, test2: type2) {}
 
@@ -59,5 +70,6 @@ fn fn_name(mut param1: type1, param2: type2) -> return_type {
     1 * 7;
     1 * variable5 - 2;
 
-    return (variable5 + 7) * 12;
+    // implicit return
+    (variable5 + 7) * 12
 }
