@@ -1,6 +1,4 @@
-// TODO: Static context for loading functions
-// jitter!("./tests/integration_test.jitter");
-
+// TODO: Static Jitter context
 use jitter::prelude::*;
 
 
@@ -12,6 +10,7 @@ extern {
 }
 
 
+// TODO: This
 #[jitter::export]
 fn from_rust() {
     println!("From Rust code");
@@ -71,10 +70,10 @@ fn main() {
     //     std::mem::transmute(jitter.get_fn("FFI_test")) 
     // };
 
-    println!("negate(1234560) = {:?}", negate(1234560));
-    println!("multiply(12, -7) = {:?}", multiply(12, -7));
+    println!("negate(1234560)      = {:?}", negate(1234560));
+    println!("multiply(12, -7)     = {:?}", multiply(12, -7));
     println!("struct_test(1, 2, 3) = {:?}", struct_test(1, 2, 3));
     println!("specified_literals() = {:?}", specified_literals());
-    println!("function_calls(5) = {:?}", function_calls(5));
+    println!("function_calls(5)    = {:?}", function_calls(5));
     // println!("FFI_test(10, 21, 39) = {:?}", FFI_test(10, 29, 31));
 }

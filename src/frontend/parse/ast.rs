@@ -47,6 +47,8 @@ impl<T> Node<T> {
 ///
 /// For example, to see all functions defined in the AST,
 /// see `AST.functions`
+// TODO: Might want to make these HashMaps instead of Vecs
+//       for convenience
 pub struct AST<'input> {
     pub externs:   Vec<Node<ExternBlock<'input>>>,
     pub functions: Vec<Node<Function<'input>>>,

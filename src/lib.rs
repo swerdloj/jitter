@@ -4,40 +4,57 @@ pub mod backend;
 
 pub use proc_macros::{link, export};
 
-#[macro_export]
-/// Converts a function identifier into a tuple of (name, address)
+/// Converts a function identifier into a tuple of (name, address)  
 /// This is used by `JITContextBuilder::with_function` for linking Rust functions to Jitter
 /// 
 /// Usage:
 /// ```Rust
 /// let jitter_context = JITContextBuilder::new()
-///     .with_source_path("./path")
+///     .with_source_path("./path/file.jitter")
 ///     .with_function(FFI!(function))
 ///     .build();
 /// ```
+#[macro_export]
 macro_rules! FFI {
     ($func:ident) => {
         (stringify!($func), $func as *const u8)
     }
 }
 
+/// Convenience function for instantiating a local Jitter context  
+/// Compiles the given file paths and links the given Rust functions
+///
+/// If no functions need to be linked, simply omit the `<- [...]` section
+///
+/// Usage:
+/// ```Rust
+/// fn some_function(...) {...}
+///
+/// let jitter_context = Jitter! {
+///     [
+///         "./path/file1.jitter", 
+///         "./path/file2.jitter", 
+///         ...
+///     ] <- [
+///         some_function, 
+///         ...
+///     ]    
+/// };
+/// ```
 #[macro_export]
 macro_rules! Jitter {
     ( 
-        // Path group
-        [$($path:expr),+ $(,)?]
-        // Function group
-        $(<- 
-            // Function group body
-            [$($func:ident),+
-        $(,)?])?
+        // Path group (with optional trailing comma)
+        [ $($path:expr),+    $(,)? ]
+        // Optional function group
+        $(  // Function group body (with optional trailing comma)
+            <- [ $($func:ident),+    $(,)? ]
+        )?
     ) => {
         JITContextBuilder::new()
 
         // Path group
         $(
-            // TODO: Let user enter path without strings. Is that even useful?
-            // .with_source_path(stringify!($path))
             .with_source_path($path)
         )+
         // Function group

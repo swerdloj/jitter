@@ -301,6 +301,8 @@ impl<'input> Context<'input> {
             //       Must be done first (to avoid collisions and to reference used items)
         // }
         for struct_ in &ast.structs {
+            // TODO: Want to declare types, then validate them.
+            //       That way, structs can reference other types declared later on
             self.register_struct(&struct_)?;
         }
         for extern_block in &ast.externs {
@@ -314,7 +316,7 @@ impl<'input> Context<'input> {
             self.functions.forward_declare_function(&function.prototype, false)?;
         }
         // for constant in &ast.constants {
-            // TODO: Declare constant in global scope
+            // TODO: Declare their typed idents in global scope
         // }
         // for trait_ in &ast.traits {
             // TODO: Build table of traits

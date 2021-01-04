@@ -71,7 +71,7 @@ struct AST {
   ...
 }
 ```
-The advantage of this representation of an `enum`/tree-based approach is the ability to "lookup" top-level items. For example, functions can all be forward declared by simply iterating over `AST.functions`. No AST traversal needed.
+The advantage of this representation to an `enum`/tree-based approach is the ability to "lookup" top-level items. For example, functions can all be forward declared by simply iterating over `AST.functions`. No AST traversal needed.
 
 **General frontend notes**:  
 The entire frontend pipeline operates on strings taken from the input (`&'input str`). The only redundant allocations needed are a handful of `Type` clones which are rather cheap.  
@@ -103,7 +103,7 @@ All data types in Jitter align with Rust's `#[repr(C)]`. Because all primitive t
 Jitter provides a simple context object for working with Rust.  
 Note that Jitter is meant to be embedded within a Rust project. While it can be used alone, FFI support without a Rust host is harder.
 
-Hooking Rust functions into Jitter is done like so:
+Hooking Rust functions into a global Jitter context is done like so:
 ```Rust
 use jitter::prelude::*;
 
@@ -121,6 +121,22 @@ fn main() {
     jitter::run("./path/to/file.jitter");
 }
 ```
+Or, using a local context:
+```Rust
+// Note that no macros are needed when using local contexts
+fn some_function(data: Data) {...}
+fn another(...) {...}
+
+fn main() {
+    let jitter = Jitter! {
+        // files to load             functions to export from Rust
+        ["./path/to/file.jitter"] <- [some_function, another]
+    };
+
+    // Runs the main function
+    jitter.run_main();
+}
+```
 
 Calling FFI function in Jitter:
 ```Rust
@@ -132,16 +148,33 @@ extern {
     fn do_something(data: Data);
 }
 
+// for next example
+fn from_jitter(data: Data) -> u32 {...}
+
 fn main() {
-    let data = Data {..};
+    let data = Data {...};
     do_something(data);
 }
 ```
 It's that easy!
 
-If you don't want a global context, you can instead use `jitter::create_local_context()` and manually link functions.
+Calling Jitter functions from Rust:
+```Rust
+// This macro allows this type to be passed to jitter
+#[jitter::data]
+struct Data {...}
 
-Calling Jitter functions from Rust is actually even easier, but there is no possible reason you would ever want to do that, so I won't demonstrate that here. I will mention, though, that you can pass types (structs, tuples, enums) between Rust and Jitter with ease.
+fn main() {
+    let data = Data {...};
+
+    // using local context
+    let result = jitter.call("from_jitter", &[data]);
+
+    // using global context
+    let result = jitter::call("from_jitter", &[data]);
+}
+```
+Arguments are passed as an array. The above would be equivalent to `from_jitter(data)`.
 
 ---
 
@@ -165,12 +198,15 @@ static mut var: Type = Type::new();
 `var` will be initialized when Jitter first identifies the static identifier as being persistent. This occurs the first time your program is run.
 
 From then on, any hot-reloads with the same variable `var` will load the previous contents of `var`.
-
+- `box`
+  - `let x = box 123` is equivalent to Rust's `let x = Box::new(123)`
+  - The result of the expression right of `box` will be allocated on the heap
+  - When `x` exits scope, the heap allocation will be freed
+  - I'm not yet sure how I want to approach manual heap allocations
 - No `unsafe`
   - Without raw pointers or lifetimes, this isn't needed
   - You can still break things by operating on bits/memory
   - `static mut` variables are treated like any other mutable variables
-
 - Strings
   - I find the different string types to be useful, so I kept them with minor changes
   - `String` works the same as in Rust, utilizing resizable heap allocations
@@ -184,6 +220,7 @@ From then on, any hot-reloads with the same variable `var` will load the previou
 let a: str = "This is a str";
 
 let number = 12;
+// equivalent to Rust's `format!("This is a formatted String: {}", number);`
 let b: String = f"This is a formatted String: {number}";
 let c: str = f"{number}".as_str();
 let d: str = &b;
