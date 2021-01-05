@@ -699,6 +699,9 @@ impl<'a> Parser<'a> {
             // TODO: `.` access, function calls
             // FIXME: This needs to be refactored
             Token::Ident(ident) => {
+                // TODO: This would yield `x.a.b` of `x.a.b *= 12;`
+                // let base = self.parse_expression();
+
                 self.advance();
 
                 // Check whether this is an assignment statement
@@ -1202,7 +1205,7 @@ impl<'a> Parser<'a> {
         }
 
         ast::Expression::FieldConstructor {
-            type_name: ident,
+            ty: Type::User(ident),
             fields,
         }
     }

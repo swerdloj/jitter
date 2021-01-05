@@ -13,17 +13,20 @@ use cranelift_module::Module; // for trait functions
 // such as generating standalone executables
 
 // Translates a function and its contents into IR
-pub struct FunctionTranslator<'a> {
-    pub pointer_type: &'a Type,
-    pub fn_builder: FunctionBuilder<'a>,
-    pub module: &'a mut cranelift_simplejit::SimpleJITModule,
+pub struct FunctionTranslator<'input> {
+    pub pointer_type: &'input Type,
+    pub fn_builder: FunctionBuilder<'input>,
+    pub module: &'input mut cranelift_simplejit::SimpleJITModule,
     // Maps `Variable`s to names and `StackSlots` to addresses
     pub data: super::DataMap,
-    pub validation_context: &'a ValidationContext<'a>,
+    pub validation_context: &'input ValidationContext<'input>,
 }
 
 impl FunctionTranslator<'_> {
     pub fn translate_function(&mut self, function: &ast::Function, return_type: Type) -> Result<(), String> {                        
+        // TEMP: debug
+        // crate::log!("Generating function `{}`:\n", function.prototype.name);
+        
         // Create the function's entry block with appropriate function parameters
         let entry_block = self.fn_builder.create_block();
         self.fn_builder.append_block_params_for_function_params(entry_block);
@@ -64,7 +67,7 @@ impl FunctionTranslator<'_> {
         self.fn_builder.finalize();
         
         // TEMP: debug (prints function before optimizations)
-        crate::log!("{}", self.fn_builder.display(self.module.isa()));
+        // crate::log!("{}", self.fn_builder.display(self.module.isa()));
 
         Ok(())
     }
@@ -81,7 +84,7 @@ impl FunctionTranslator<'_> {
     fn translate_statement(&mut self, statement: &ast::Statement) -> Result<(), String> {
         // NOTE: All types will be known and validated at this point
         match statement {
-            // TODO: Utilize knowledge of mutability
+            // TODO: Utilize knowledge of mutability?
             // Create a new variable and assign it if an expression is given
             ast::Statement::Let { ident, mutable, ty, value } => {
                 let var = self.data.create_var(*ident);
@@ -109,18 +112,9 @@ impl FunctionTranslator<'_> {
                     ast::AssignmentOp::Assign => {
                         self.fn_builder.def_var(*var, expr_value);
                     }
-                    ast::AssignmentOp::AddAssign => {
-                        todo!();
-                    }
-                    ast::AssignmentOp::SubtractAssign => {
-                        todo!();
-                    }
-                    ast::AssignmentOp::MultiplyAssign => {
-                        todo!();
-                    }
-                    ast::AssignmentOp::DivideAssign => {
-                        todo!();
-                    }
+
+                    // Transformed during validation
+                    _ => unreachable!(),
                 }
             }
 
@@ -212,9 +206,8 @@ impl FunctionTranslator<'_> {
             }
 
             // Any type created by constructor is allocated on the stack
-            ast::Expression::FieldConstructor { type_name, fields } => {
-                let type_ = CompilerType::User(type_name);
-                let type_size = self.validation_context.types.size_of(&type_) as u32;
+            ast::Expression::FieldConstructor { ty, fields } => {
+                let type_size = self.validation_context.types.size_of(ty) as u32;
                 
                 // Allocate the type on the stack and get its address
                 let stack_slot = self.allocate_explicit_stack_data(type_size);
@@ -229,7 +222,7 @@ impl FunctionTranslator<'_> {
                 // TODO: Do not allocate extra slot for nested types
                 for (field, expr) in fields {
                     let field_value = self.translate_expression(expr)?;
-                    let field_offset = self.validation_context.get_field_offset(&type_, field)? as i32;
+                    let field_offset = self.validation_context.get_field_offset(ty, field)? as i32;
                     self.fn_builder.ins().stack_store(field_value, stack_slot, field_offset);
                 }
 
@@ -241,8 +234,8 @@ impl FunctionTranslator<'_> {
             ast::Expression::FieldAccess { base_expr, field, ty  } => {
                 let stack_address = self.translate_expression(base_expr)?;
                 let stack_slot = self.data.get_stack_slot(&stack_address)?;
-                let base_type = self.validation_context.get_expression_type(base_expr)?;
-                let offset = self.validation_context.get_field_offset(&base_type, field)?;
+                let base_type = base_expr.get_type();
+                let offset = self.validation_context.get_field_offset(base_type, field)?;
 
                 // FIXME: Narrowing cast
                 self.fn_builder.ins().stack_load(
@@ -255,28 +248,6 @@ impl FunctionTranslator<'_> {
             // FIXME: Same functions are being declared multiple times.
             //        Should only ever declare a function once
             ast::Expression::FunctionCall { name, inputs, ty } => {
-                /* FIXME: What is this doing regarding the existing definition?
-                // Build the function call signature
-                let mut call_signature = self.module.make_signature();
-                
-                for arg in inputs {
-                    let arg_type = self.validation_context.get_expression_type(arg)?;
-                    call_signature.params.push(
-                        AbiParam::new(arg_type.ir_type(self.pointer_type))
-                    );
-                }
-
-                // No return values for unit types
-                if ty != &CompilerType::Unit {
-                    call_signature.returns.push(AbiParam::new(ty.ir_type(self.pointer_type)));
-                }
-
-                // Reference the function
-                let func_id = self.module.declare_function(name, cranelift_module::Linkage::Import, &call_signature)
-                    .map_err(|e| e.to_string())?;
-                */
-
-                // FIXME: Isn't this better than the above? What is the difference?
                 let func_id = if let cranelift_module::FuncOrDataId::Func(id) = self.module.declarations().get_name(name).expect("get_function_id_for_call") {
                     id
                 } else {

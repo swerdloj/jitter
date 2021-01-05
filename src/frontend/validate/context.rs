@@ -3,264 +3,13 @@ use std::collections::{HashMap, HashSet};
 use crate::frontend::parse::ast;
 
 use super::types::Type;
+use super::*;
 
-///////////////////// Helper Types /////////////////////
-
-/// Stores struct definitions
-struct StructDefinition<'input> {
-    /// Map of field_name -> (type, byte offset)
-    fields: HashMap<&'input str, (Type<'input>, usize)>,
-}
-
-pub struct TypeTableEntry {
-    /// Size of type in bytes
-    pub size: usize,
-    /// Alignment of type in bytes
-    alignment: usize,
-    // TODO: Store fields and their offsets here too
-    // field_offets: HashMap<?>,
-}
-
-impl TypeTableEntry {
-    fn new(size: usize, alignment: usize) -> Self {
-        Self { size, alignment }
-    }
-}
-
-/// Stores type sizes and alignments
-pub struct TypeTable<'input> {
-    /// Map of field_name -> (size, alignment) in bytes
-    data: HashMap<Type<'input>, TypeTableEntry>
-}
-
-impl<'input> TypeTable<'input> {
-    // TODO: Accept word size here and adjust table accordingly
-    // TODO: Support `isize` and `usize`
-    fn new() -> Self {
-        let mut data = HashMap::new();
-
-        // FIXME: This could be looked up via `match`, but this is more consistent
-        // FIXME: Only 64-bit architectures are supported by the below values
-        
-        data.insert(Type::u8,   TypeTableEntry::new(1, 1));
-        data.insert(Type::u16,  TypeTableEntry::new(2, 2));
-        data.insert(Type::u32,  TypeTableEntry::new(4, 4));
-        data.insert(Type::u64,  TypeTableEntry::new(8, 8));
-        data.insert(Type::u128, TypeTableEntry::new(16, 8));
-
-        data.insert(Type::i8,   TypeTableEntry::new(1, 1));
-        data.insert(Type::i16,  TypeTableEntry::new(2, 2));
-        data.insert(Type::i32,  TypeTableEntry::new(4, 4));
-        data.insert(Type::i64,  TypeTableEntry::new(8, 8));
-        data.insert(Type::i128, TypeTableEntry::new(16, 8));
-
-        data.insert(Type::f32,  TypeTableEntry::new(4, 4));
-        data.insert(Type::f64,  TypeTableEntry::new(8, 8));
-
-        data.insert(Type::bool, TypeTableEntry::new(1, 1));
-
-        data.insert(Type::Unit, TypeTableEntry::new(0, 1));
-
-        Self { data }
-    }
-
-    fn insert(&mut self, t: &Type<'input>, entry: TypeTableEntry) -> Result<(), String> {
-        match self.data.insert(t.clone(), entry) {
-            Some(_) => Err(format!("Type {} already exists", t.clone())),
-            None => Ok(()),
-        }
-    }
-
-    fn assert_valid(&self, t: &Type<'input>) -> Result<(), String> {
-        match t {
-            // Strip away references to check the underlying type
-            Type::Reference { ty, .. } => Ok(self.assert_valid(ty)?),
-
-            // Check all contained types
-            Type::Tuple(types) => {
-                // TODO: All types can be checked (rather than stopping at first error)
-                //       Just store all errors, then build an error string
-                for ty in types {
-                    let result = self.assert_valid(ty);
-                    if result.is_err() {
-                        return result;
-                    }
-                }
-                Ok(())
-            }
-
-            // Base types
-            _ => {
-                if self.data.contains_key(t) {
-                    Ok(())
-                } else {
-                    Err(format!("Type `{}` is not valid", t))
-                }
-            }
-        }
-    }
-
-    /// Returns alignment of the type in bytes
-    fn alignment_of(&self, t: &Type) -> usize {
-        match t {
-            // TODO: Alignment should be same as pointer type
-            Type::Reference { ty, .. } => todo!("need pointer type stuff"),
-            
-            // TODO: Tuples should align same as structs
-            Type::Tuple(types) => todo!("tuple alignment"),
-
-            _ => self.data.get(t).expect("alignment_of").alignment,
-        }
-    }
-
-    /// Returns the size of the type in bytes
-    pub fn size_of(&self, t: &Type) -> usize {
-        self.data.get(t).unwrap().size
-    }
-}
-
-
-struct VariableData<'input> {
-    /// Is the variable mutable
-    pub mutable: bool,
-    // Is it local or global
-    // local: bool,
-    /// Type of the variable
-    pub ty: Type<'input>,
-}
-
-impl<'input> VariableData<'input> {
-    fn new(mutable: bool, ty: Type<'input>) -> Self {
-        Self { mutable, ty }
-    }
-}
-
-struct Scopes<'input> {
-    /// Each element represents a nested scope
-    scopes: Vec<HashMap<&'input str, VariableData<'input>>>,
-    num_scopes: usize,
-}
-
-impl<'input> Scopes<'input> {
-    fn new() -> Self {
-        Self {
-            scopes: Vec::new(),
-            num_scopes: 0,
-        }
-    }
-
-    fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
-        self.num_scopes += 1;
-    }
-
-    fn pop_scope(&mut self) {
-        self.scopes.pop();
-        self.num_scopes -= 1;
-    }
-
-    fn add_var_to_scope(&mut self, name: &'input str, mutable: bool, ty: Type<'input>) -> Result<(), String> {
-        if let Some(_old) = self.scopes[self.num_scopes-1].insert(name, VariableData::new(mutable, ty)) {
-            Err(format!("Variable `{}` is already defined in this scope", name))
-        } else {
-            Ok(())
-        }
-    }
-
-    fn get_variable(&mut self, name: &str) -> Result<&VariableData<'input>, String> {
-        for scope in &self.scopes {
-            if let Some(var) = scope.get(name) {
-                return Ok(var);
-            }
-        }
-
-        Err(format!("No variable `{}` in scope", name))
-    }
-}
-
-
-pub struct FunctionDefinition<'input> {
-    /// Function parameters (field_name, field_type, mutable) in order
-    pub parameters: Vec<(&'input str, Type<'input>, bool)>,
-    pub return_type: Type<'input>,
-    pub is_extern: bool,
-    pub is_validated: bool,
-}
-
-pub struct FunctionTable<'input> {
-    // Map of (name -> data)
-    pub functions: HashMap<&'input str, FunctionDefinition<'input>>
-}
-
-impl<'input> FunctionTable<'input> {
-    fn new() -> Self {
-        Self {
-            functions: HashMap::new(),
-        }
-    }
-
-    // FIXME: A few copies and clones, but nothing bad
-    fn forward_declare_function(&mut self, validated_prototype: &ast::FunctionPrototype<'input>, is_extern: bool) -> Result<(), String> {
-        if self.functions.contains_key(validated_prototype.name) {
-            return Err(format!("Function `{}` already exists", validated_prototype.name));
-        }
-
-        let parameters = validated_prototype.parameters.iter().map(|param| {
-            (param.field_name, param.field_type.clone(), param.mutable)
-        }).collect();
-
-        let definition = FunctionDefinition {
-            parameters,
-            return_type: validated_prototype.return_type.clone(),
-            is_extern,
-            is_validated: false,
-        };
-
-        self.functions.insert(validated_prototype.name, definition);
-
-        Ok(())
-    }
-
-    fn __get_mut(&mut self, name: &str) -> Result<&mut FunctionDefinition<'input>, String> {
-        self.functions.get_mut(name)
-            .ok_or(format!("Could not find function `{}`", name))
-    }
-
-    fn __get(&self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
-        self.functions.get(name)
-            .ok_or(format!("Could not find function `{}`", name))
-    }
-
-    // TODO: This and `get_validated_function_definition` may not ever be used
-    //       (this functionality exists in finalized JIT product)
-    fn mark_function_validated(&mut self, name: &str) -> Result<(), String> {
-        self.__get_mut(name)?
-            .is_validated = true;
-        Ok(())
-    }
-
-    // TODO: Will this ever be used?
-    fn get_validated_function_definition(&mut self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
-        let function = self.__get(name)?;
-
-        if !function.is_validated {
-            // FIXME: This should not be possible
-            Err(format!("Function `{}` was not validated", name))
-        } else {
-            Ok(function)
-        }
-    }
-
-    /// Returns a `FunctionDefinition` that is not guarenteed to have been
-    /// successfully validated
-    fn get_unchecked_function_definition(&mut self, name: &str) -> Result<&FunctionDefinition<'input>, String> {
-        self.__get(name)
-    }
-}
-
-///////////////////// Main Functionality /////////////////////
+///////////////////// Main Validation Functionality /////////////////////
 
 pub struct Context<'input> {
+    /// Variable allocation data
+    pub allocations: AllocationTable<'input>,
     /// Function signatures
     pub functions: FunctionTable<'input>,
     /// Struct signatures
@@ -275,12 +24,15 @@ pub struct Context<'input> {
 
     /// Used to validate function bodies using `Statement::Return`s
     last_return_type: Type<'input>,
+    /// Used to simplify table lookups
+    current_function_name: &'input str,
 }
 
 impl<'input> Context<'input> {
     /// Creates an empty validation context
     pub fn new() -> Self {
         Self {
+            allocations: AllocationTable::new(),
             functions: FunctionTable::new(),
             structs: HashMap::new(),
             types: TypeTable::new(),
@@ -289,6 +41,7 @@ impl<'input> Context<'input> {
             ast: ast::AST::placeholder(),
 
             last_return_type: Type::Unknown,
+            current_function_name: "",
         }
     }
 
@@ -334,6 +87,7 @@ impl<'input> Context<'input> {
         // for constant in &ast.constants {
         // }
         for function in &mut ast.functions {
+            self.current_function_name = function.prototype.name;
             self.validate_function_body(function)?;
         }
         // TODO:
@@ -459,12 +213,16 @@ impl<'input> Context<'input> {
         // Create a new scope containing the function's parameters
         self.scopes.push_scope();
         for param in &function.prototype.parameters.item {
-            self.scopes.add_var_to_scope(param.field_name, param.mutable, param.field_type.clone())?;
+            // NOTE: Function parameters are passed in -> no allocation information needed
+            self.scopes.add_var_to_scope(param.field_name, param.mutable, param.field_type.clone(), MemoryUsage::FunctionParam)?;
         }
         
         // Validate the function body
         let _implicit_return_type = self.validate_block(&mut function.body, true)?;
-        self.scopes.pop_scope();
+
+        for (name, data) in self.scopes.pop_scope().variables {
+            self.allocations.insert(self.current_function_name, name, data.memory_usage)?;
+        }
 
         if self.last_return_type == function.prototype.return_type {
             // Reset for the next function
@@ -488,13 +246,15 @@ impl<'input> Context<'input> {
             match &mut statement.item {
                 // ImplcitReturn is just a special expression
                 ast::Statement::ImplicitReturn { expression, is_function_return } => {
+                    let expr_type = self.validate_expression(expression)?;
+
                     if is_function_body {
                         *is_function_return = true;
+
+                        if let Some(ident) = Self::reduce_expression_to_alias(expression) {
+                            self.scopes.signal_return_variable(ident);
+                        }
                     }
-
-
-                    let expr_type = self.validate_expression(expression)?;
-                    self.types.assert_valid(&expr_type)?;
 
                     if block_type.is_unknown() {
                         block_type = expr_type;
@@ -513,6 +273,8 @@ impl<'input> Context<'input> {
         }
 
         // Implicit return is used in place of explicit return
+        // NOTE: Don't need to check last return type because function body
+        //       can only ever have a single implicit return (the first one found)
         if is_function_body && self.last_return_type.is_unknown() {
             self.last_return_type = block_type.clone();
         }
@@ -527,33 +289,39 @@ impl<'input> Context<'input> {
         match statement {
             // Ensures the variable is not already in scope and has valid types
             ast::Statement::Let { ident, mutable, ty, value } => {
-                // TODO: Account for variable scopes
-
+                // All variables use stack slots by default
+                let mut memory_usage = MemoryUsage::StackSlot;
+                
                 // Variable is declared and assigned
                 if let Some(expr) = value {
-                    let expr_type = self.validate_expression(expr)?;
+                    let assigned_type = self.validate_expression(expr)?;
 
-                    // Type must be equivalent to the expression type
+                    // If this assignment simply aliases another variable,
+                    // signal that no allocations are needed, as this will use that variable's
+                    if let Some(alias) = Self::reduce_expression_to_alias(expr) {
+                        memory_usage = MemoryUsage::Alias(alias);
+                    }
+
                     if ty.is_unknown() {
-                        *ty = expr_type;
-                    } else if ty != &expr_type {
-                        return Err(format!("Variable `{}` has type `{}`, but is assigned the type `{}`", ident, ty, expr_type));
+                        // Immediate type inferrence
+                        *ty = assigned_type;
+                    } else if ty != &assigned_type {
+                        // Eplicit type must be equivalent to the expression's type
+                        return Err(format!("Variable `{}` has type `{}`, but is assigned the type `{}`", ident, ty, assigned_type));
                     }
                 // Variable is declared, not assigned
                 } else {
                     // Type is not known and cannot be determined at the moment
                     if ty.is_unknown() {
-                        // TODO:
+                        // TODO: Account for unknown types
                         todo!("Mark variable for being inferred later on");
                     }
                 }
 
-                // Type is determined at this point
-                // TODO: Account for marked variables (see `todo`)
-                self.types.assert_valid(ty)?;
-                self.scopes.add_var_to_scope(ident, *mutable, ty.clone())?;
+                self.scopes.add_var_to_scope(ident, *mutable, ty.clone(), memory_usage)?;
             }
 
+            // TODO: aliasing/reducing
             ast::Statement::Assign { variable, operator, expression } => {
                 // Desugar op-assignments
                 if operator.item != ast::AssignmentOp::Assign {
@@ -567,6 +335,19 @@ impl<'input> Context<'input> {
 
                     operator.item = ast::AssignmentOp::Assign;
 
+                    // TODO: Try to make this work so no clone is needed
+                    // *expression = ast::Node::new(
+                    //     ast::Expression::BinaryExpression {
+                    //         lhs: Box::new(ast::Node::new(ast::Expression::Ident {
+                    //             name: variable,
+                    //             ty: Type::Unknown,
+                    //         }, expression.span)),
+                    //         op: ast::Node::new(new_op, operator.span),
+                    //         rhs: Box::new(*expression),
+                    //         ty: Type::Unknown,
+                    //     }, expression.span
+                    // );
+
                     expression.item = ast::Expression::BinaryExpression {
                         lhs: Box::new(ast::Node::new(ast::Expression::Ident {
                             name: variable,
@@ -575,14 +356,18 @@ impl<'input> Context<'input> {
                         op: ast::Node::new(new_op, operator.span),
                         rhs: Box::new(expression.clone()),
                         ty: Type::Unknown,
-                    }
+                    };
                 }
 
-                let var_data = self.scopes.get_variable(variable)?;
+                let var_data = self.scopes.get_variable_mut(variable)?;
                 if !var_data.mutable {
                     return Err(format!("Cannot assign to immutable variable `{}`", variable));
                 }
 
+                if let Some(ident) = Self::reduce_expression_to_alias(expression) {
+                    var_data.memory_usage = MemoryUsage::Alias(ident);
+                }
+                
                 self.validate_expression(expression)?;
             }
 
@@ -595,16 +380,21 @@ impl<'input> Context<'input> {
                 } else if self.last_return_type != return_type {
                     return Err(format!("Found differing return types: `{}` and `{}`", &return_type, &self.last_return_type));
                 }
+
+                // If a stack-allocated variable is being returned,
+                // signal that the variable must use the struct-return slot
+                if let Some(ident) = Self::reduce_expression_to_alias(expression) {
+                    self.scopes.signal_return_variable(ident);
+                }
+            }
+
+            ast::Statement::ImplicitReturn { expression, .. } => {
+                self.validate_expression(expression)?;
             }
 
             ast::Statement::Expression(expr) => {
                 self.validate_expression(expr)?;
-            }
-
-            
-            ast::Statement::ImplicitReturn { expression, .. } => {
-                self.validate_expression(expression)?;
-            }
+            }  
         }
 
         Ok(())
@@ -680,9 +470,8 @@ impl<'input> Context<'input> {
             }
 
             // Ensure that all fields are filled and that valid types are used
-            ast::Expression::FieldConstructor { type_name, fields } => {
-                let target_type = Type::User(type_name);
-                self.types.assert_valid(&target_type)?;
+            ast::Expression::FieldConstructor { ty, fields } => {
+                self.types.assert_valid(ty)?;
 
                 // FIXME: To maintain correct field ordering during error printing,
                 //        a Vec can be used instead (at the cost of speed)
@@ -690,8 +479,8 @@ impl<'input> Context<'input> {
                 
                 // FIXME: A few hacks to avoid immutable + mutable borrow
                 {
-                    let struct_definition = self.structs.get(type_name)
-                        .ok_or(format!("No type `{}` compatible with field constructor", type_name))?;
+                    let struct_definition = self.structs.get(ty.to_string().as_str())
+                        .ok_or(format!("No type `{}` compatible with field constructor", ty))?;
 
                     // Note the required fields
                     for field in struct_definition.fields.keys() {
@@ -702,22 +491,22 @@ impl<'input> Context<'input> {
                 // Check each assigned field/value with the expected fields/values
                 for (field_name, expr) in fields {
                     // FIXME: Another (not terrible) hack to satisfy borrows
-                    let (field_type, _) = self.structs.get(type_name).unwrap().fields.get(field_name)
-                        .ok_or(format!("Type `{}` has no field `{}`", type_name, field_name))?.clone();
+                    let (field_type, _) = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name)
+                        .ok_or(format!("Type `{}` has no field `{}`", ty, field_name))?.clone();
                     
                     // Required field is accounted for
                     required_fields.remove(field_name);
 
                     let assigned_type = self.validate_expression(expr)?;
                     if assigned_type != field_type {
-                        return Err(format!("Field `{}.{}` is of type `{}`, but found type `{}`", type_name, field_name, field_type, assigned_type));
+                        return Err(format!("Field `{}.{}` is of type `{}`, but found type `{}`", ty, field_name, field_type, assigned_type));
                     }
                 }
 
                 // Error if any fields are missing
                 if required_fields.len() > 0 {
                     // FIXME: Can't use newlines here?
-                    let mut error = format!("Constructor for type `{}` is missing fields: ", type_name);
+                    let mut error = format!("Constructor for type `{}` is missing fields: ", ty);
                     for missing in required_fields {
                         error.push_str(&format!("`{}`, ", missing));
                     }
@@ -727,7 +516,7 @@ impl<'input> Context<'input> {
                     return Err(error);
                 }
 
-                Ok(target_type)
+                Ok(ty.clone())
             }
 
             // TODO: This needs to be modified later to also support enums and tuples
@@ -771,7 +560,11 @@ impl<'input> Context<'input> {
             ast::Expression::Block(block) => {
                 self.scopes.push_scope();
                 let expr_type = self.validate_block(block, false)?;
-                self.scopes.pop_scope();
+                
+                for (name, data) in self.scopes.pop_scope().variables {
+                    self.allocations.insert(self.current_function_name, name, data.memory_usage)?;
+                }
+
 
                 Ok(expr_type)
             }
@@ -792,24 +585,13 @@ impl<'input> Context<'input> {
         }
     }
 
-    // TODO: Could this be moved to an `impl ast::Expression` function?
-    /// Returns the type of a **validated** expression
-    pub fn get_expression_type(&self, expression: &ast::Expression<'input>) -> Result<Type<'input>, String> {
-        let expr_type = match expression {
-            ast::Expression::BinaryExpression { ty, .. } => ty.clone(),
-            ast::Expression::UnaryExpression { ty, .. } => ty.clone(), 
-            ast::Expression::FieldConstructor { type_name, .. } => Type::User(type_name),
-            ast::Expression::FieldAccess { ty, .. } => ty.clone(),
-            ast::Expression::FunctionCall { ty, .. } => ty.clone(),
-            ast::Expression::Block(block) => block.ty.clone(),
-            ast::Expression::Literal { ty, .. } => ty.clone(),
-            ast::Expression::Ident { ty, .. } => ty.clone(),
-        };
-
-        if expr_type.is_unknown() {
-            Err(format!("Cannot get expression type of non-validated expression"))
-        } else {
-            Ok(expr_type)
+    /// If an expression reduces to an alias, return the alias.  
+    /// Returns `None` if the expression does not alias any variables.
+    fn reduce_expression_to_alias(validated_expression: &ast::Expression<'input>) -> Option<&'input str> {
+        if let ast::Expression::Ident { name, .. } = validated_expression {
+            return Some(name);
         }
+
+        None
     }
 }

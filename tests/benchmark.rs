@@ -59,15 +59,16 @@ mod tests {
         let validate = time("validate");
 
         // Validate the AST
-        let validation_context = jitter::frontend::validate::validate_ast(ast).unwrap();
-        
+        let mut validation_context = jitter::frontend::validate::context::Context::new();
+        validation_context.validate(ast).unwrap();
+
         total_time += validate.end();
 
 
         let jit_comp = time("jit_comp");
 
         // Create JIT compiler context and compile the input
-        let mut jit = jitter::backend::jit::JITContext::default();
+        let mut jit = jitter::backend::jit::JitterContext::default();
         jit.translate(validation_context).unwrap();
 
         total_time += jit_comp.end();

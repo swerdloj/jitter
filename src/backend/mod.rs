@@ -3,15 +3,6 @@ mod codegen;
 /// Contains the JIT driver
 pub mod jit;
 
-/* 
-TODO:
-
-    1. Interpret inputs such that those functions can be called
-        - This should support REPL-style addition of functions
-
-    2. Get struct impls working
-
-*/
 
 use std::collections::HashMap;
 

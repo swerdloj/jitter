@@ -14,15 +14,15 @@ use cranelift_simplejit::{SimpleJITBuilder, SimpleJITModule};
 use std::collections::HashMap;
 
 
-/// Builder for creating a `JITContext`. Enables FFI linking
-pub struct JITContextBuilder<'a> {
+/// Builder for creating a `JitterContext`. Enables FFI linking
+pub struct JitterContextBuilder<'a> {
     simple_jit_builder: SimpleJITBuilder,
     source_path: &'a str,
 }
 
 // TODO: Allow optimization settings to be passed in
 // TODO: Accept/determine target ISA
-impl<'a> JITContextBuilder<'a> {
+impl<'a> JitterContextBuilder<'a> {
     pub fn new() -> Self {
         let mut settings = settings::builder();
         // can also do "speed_and_size"
@@ -57,15 +57,16 @@ impl<'a> JITContextBuilder<'a> {
     // pub fn add_source_path...
 
     // TODO: Return Result
-    pub fn build(self) -> JITContext {
-        let mut jit_context = JITContext::new(self.simple_jit_builder);
+    pub fn build(self) -> JitterContext {
+        let mut jit_context = JitterContext::new(self.simple_jit_builder);
         
         if self.source_path != "" {
             let input = &std::fs::read_to_string(self.source_path).expect("Read input");
             let tokens = crate::frontend::lex::Lexer::lex_str(self.source_path, input, true);
             let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
             let ast = parser.parse_ast();
-            let validation_context = crate::frontend::validate::validate_ast(ast).expect("AST Validation");
+            let mut validation_context = crate::frontend::validate::context::Context::new();
+            validation_context.validate(ast).expect("AST Validation");
 
             jit_context.translate(validation_context).expect("JIT-compile");
         }
@@ -76,7 +77,7 @@ impl<'a> JITContextBuilder<'a> {
 
 
 /// Contains all information needed to JIT compile and run the generated code
-pub struct JITContext {
+pub struct JitterContext {
     // FIXME: How is `Context` related to functions?
     fn_builder_context: FunctionBuilderContext,
     fn_context: codegen::Context,
@@ -92,14 +93,14 @@ pub struct JITContext {
     pointer_type: Type,
 }
 
-impl Default for JITContext {
+impl Default for JitterContext {
     #[inline(always)]
     fn default() -> Self {
-        JITContextBuilder::new().build()
+        JitterContextBuilder::new().build()
     }
 }
 
-impl JITContext {
+impl JitterContext {
     pub fn new(builder: SimpleJITBuilder) -> Self {
         let module = SimpleJITModule::new(builder);
 
@@ -150,12 +151,10 @@ impl JITContext {
         // Performs linking
         self.module.finalize_definitions();
 
-        // TODO: How to print all of the generated IR?
-
         Ok(())
     }
 
-    fn forward_declare_function(&mut self, name: &str, definition: &crate::frontend::validate::context::FunctionDefinition) -> Result<cranelift_module::FuncId, String> {
+    fn forward_declare_function(&mut self, name: &str, definition: &crate::frontend::validate::FunctionDefinition) -> Result<cranelift_module::FuncId, String> {
         if self.functions.contains_key(name) {
             return Err(format!("Function `{}` was already defined", name));
         }
@@ -192,9 +191,6 @@ impl JITContext {
     fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
         let func_id = self.functions.get(function.prototype.name)
             .ok_or(format!("Attempted to translate an unregistered function: {}", function.prototype.name))?;
-        
-        // TEMP: debug
-        crate::log!("Generating function `{}`:\n", function.prototype.name);
 
         // Define the function parameters
         for parameter in &function.prototype.parameters.item {
@@ -226,6 +222,9 @@ impl JITContext {
         function_translator.translate_function(function, return_type)?;
         // Performs constant folding (only optimization for now)
         cranelift_preopt::optimize(&mut self.fn_context, self.module.isa()).expect("Optimize");
+
+        // TEMP: Debug
+        // crate::log!("{}", self.fn_context.func.display(self.module.isa()));
         
         // Define the function
         self.module

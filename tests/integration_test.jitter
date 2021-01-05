@@ -58,7 +58,7 @@ fn function_calls(a: i32) -> i32 {
     call_result += multiply(3_i32, 4_i32);
 
     let x: () = no_return();
-    hello_from_rust(12_i32);
+    // hello_from_rust(12_i32);
 
     call_result + a
 }
@@ -110,4 +110,81 @@ fn negate(a: i32) -> i32 {
 // TODO: Infer literal types
 // fn return_12i32() -> i32 {
 //     return 12;
+// }
+
+fn aliasing() -> Test {
+    // Requires stack allocation
+    let x = Test {
+        a: 1_i8,
+        b: 2_u16,
+        c: 3_u16,
+    };
+
+    // let test1 = x.a;
+    
+    // Uses x's allocation (y is alias of x)
+    let mut y = x;
+    y = Test {
+        a: 4_i8,
+        b: 5_u16,
+        c: 6_u16,
+    };
+
+    // Requires struct-return stack allocation
+    let mut z = Test {
+        a: 7_i8,
+        b: 8_u16,
+        c: 9_u16,
+    };
+
+    // y is now an alias of z now. Not x anymore.
+    y = z;
+
+    // let test2 = y.b;
+
+    // Must return the struct-return stack slot's address
+    y
+}
+
+// TODO: struct-return slot usage
+// fn struct_returns() {
+//     let x = aliasing();
+//     x.a;
+// }
+
+// TODO: Moves
+// fn move_invalid() {
+//     // x is new u32 -> allocate x
+//     let mut x = 12_u32;
+//     // y is an alias of x -> point use x's allocation -> mark x as moved
+//     let y = x;
+
+//     // NOTE: Once non-lexical lifetimes are implemented, this will be perfectly valid
+//     //       as the move will end once y's lifetime ends
+
+//     // use of moved value -> error
+//     x += 2_u32;
+// }
+
+// TODO: Moves
+// fn move_valid() {
+//     // x is new u32 -> allocate x
+//     let mut x = 12_u32;
+//     // x is used for calculation, but not moved
+//     let y = x + 1_u32;
+
+//     // both x and y are valid
+//     x += 2_u32;
+// }
+
+// TODO: Block expressions as base expressions
+// fn moves() {
+//     let mut x = 7;
+//     {
+//         let mut y = x;
+//         // invalid
+//         x += 1;
+//     }
+//     // valid
+//     x += 1;
 // }

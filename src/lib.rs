@@ -5,11 +5,11 @@ pub mod backend;
 pub use proc_macros::{link, export};
 
 /// Converts a function identifier into a tuple of (name, address)  
-/// This is used by `JITContextBuilder::with_function` for linking Rust functions to Jitter
+/// This is used by `JitterContextBuilder::with_function` for linking Rust functions to Jitter
 /// 
 /// Usage:
 /// ```Rust
-/// let jitter_context = JITContextBuilder::new()
+/// let jitter_context = JitterContextBuilder::new()
 ///     .with_source_path("./path/file.jitter")
 ///     .with_function(FFI!(function))
 ///     .build();
@@ -51,7 +51,7 @@ macro_rules! Jitter {
             <- [ $($func:ident),+    $(,)? ]
         )?
     ) => {
-        JITContextBuilder::new()
+        JitterContextBuilder::new()
 
         // Path group
         $(
@@ -71,7 +71,7 @@ macro_rules! Jitter {
 
 pub mod prelude {
     pub use crate::Jitter;
-    pub use crate::backend::jit::{JITContextBuilder, JITContext};
+    pub use crate::backend::jit::{JitterContextBuilder, JitterContext};
 }
 
 

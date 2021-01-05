@@ -18,7 +18,7 @@ fn from_rust() {
 
 
 fn hello_from_rust(number: i32) {
-    println!("\n\nHello from Rust! -- {}\n\n", number);
+    println!("\nHello from Rust! -- {}\n", number);
 }
 
 #[derive(Debug)]
@@ -38,7 +38,7 @@ fn main() {
 
     // The above is equivalent to this:
 
-    // let mut jit = JITContextBuilder::new()
+    // let mut jit = JitterContextBuilder::new()
     //     .with_source_path("./tests/integration_test.jitter")
     //     .with_function(jitter::FFI!(hello_from_rust))
     //     .build();

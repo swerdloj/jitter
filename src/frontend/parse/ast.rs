@@ -209,7 +209,7 @@ pub enum Expression<'input> {
     /// Constructor for a type with fields
     FieldConstructor {
         // Name of type
-        type_name: &'input str,
+        ty: Type<'input>,
         // Map of (field_name -> value)
         fields: std::collections::HashMap<&'input str, Node<Expression<'input>>>,
     },
@@ -248,6 +248,23 @@ pub enum Expression<'input> {
         name: &'input str,
         ty: Type<'input>,
     },
+}
+
+impl<'input> Expression<'input> {
+    /// Returns the type of the expression as known at that time.  
+    /// Type may be unknown for non-validated expressions
+    pub fn get_type(&self) -> &Type<'input> {
+        match self {
+            Expression::BinaryExpression { ty, .. } => ty,
+            Expression::UnaryExpression { ty, .. } => ty,
+            Expression::FieldConstructor { ty, .. } => ty,
+            Expression::FieldAccess { ty, .. } => ty,
+            Expression::FunctionCall { ty, .. } => ty,
+            Expression::Block(block) => &block.ty,
+            Expression::Literal { ty, .. } => ty,
+            Expression::Ident { ty, .. } => ty,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
