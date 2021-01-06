@@ -17,12 +17,22 @@ pub struct FunctionTranslator<'input> {
     pub pointer_type: &'input Type,
     pub fn_builder: FunctionBuilder<'input>,
     pub module: &'input mut cranelift_simplejit::SimpleJITModule,
-    // Maps `Variable`s to names and `StackSlots` to addresses
+    // Maps `Variable`s to names and `StackSlot`s to addresses
     pub data: super::DataMap,
     pub validation_context: &'input ValidationContext<'input>,
 }
 
-impl FunctionTranslator<'_> {
+impl<'input> FunctionTranslator<'input> {
+    pub fn new(pointer_type: &'input Type, fn_builder: FunctionBuilder<'input>, module: &'input mut cranelift_simplejit::SimpleJITModule, validation_context: &'input ValidationContext<'input>) -> Self {
+        Self {
+            pointer_type,
+            fn_builder,
+            module,
+            data: super::DataMap::new(),
+            validation_context,
+        }
+    }
+
     pub fn translate_function(&mut self, function: &ast::Function, return_type: Type) -> Result<(), String> {                        
         // TEMP: debug
         // crate::log!("Generating function `{}`:\n", function.prototype.name);
@@ -71,22 +81,12 @@ impl FunctionTranslator<'_> {
 
         Ok(())
     }
-
-    fn allocate_explicit_stack_data(&mut self, bytes: u32) -> codegen::ir::StackSlot {
-        self.fn_builder.create_stack_slot(
-            StackSlotData::new(
-                StackSlotKind::ExplicitSlot, 
-                bytes
-            )
-        )
-    }
     
     fn translate_statement(&mut self, statement: &ast::Statement) -> Result<(), String> {
         // NOTE: All types will be known and validated at this point
         match statement {
-            // TODO: Utilize knowledge of mutability?
             // Create a new variable and assign it if an expression is given
-            ast::Statement::Let { ident, mutable, ty, value } => {
+            ast::Statement::Let { ident, ty, value, .. } => {
                 let var = self.data.create_var(*ident);
 
                 // Unit type is declared as invalid. 
@@ -210,7 +210,12 @@ impl FunctionTranslator<'_> {
                 let type_size = self.validation_context.types.size_of(ty) as u32;
                 
                 // Allocate the type on the stack and get its address
-                let stack_slot = self.allocate_explicit_stack_data(type_size);
+                let stack_slot = self.fn_builder.create_stack_slot(StackSlotData {
+                    kind: StackSlotKind::ExplicitSlot,
+                    size: type_size,
+                    offset: None,
+                });
+                
                 // FIXME: This appears to be the wrong approach to getting stack addresses
                 //        Is this address what should be returned for custom types?
                 let stack_address = self.fn_builder.ins().stack_addr(
@@ -303,7 +308,8 @@ impl FunctionTranslator<'_> {
                         }
                     }
                     ast::Literal::UnitType => {
-                        todo!()
+                        // Return arbitrary value (unused)
+                        Value::from_u32(0)
                     }
                 }                
             }

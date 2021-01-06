@@ -76,6 +76,8 @@ struct Test {
 
 fn no_return() {
     let x = 7.2_f32;
+    // TODO: Returns with unit type
+    // ()
 }
 
 fn specified_literals() -> i8 {

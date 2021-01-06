@@ -700,7 +700,7 @@ impl<'a> Parser<'a> {
             // FIXME: This needs to be refactored
             Token::Ident(ident) => {
                 // TODO: This would yield `x.a.b` of `x.a.b *= 12;`
-                // let base = self.parse_expression();
+                // let base = self.parse_base_expression();
 
                 self.advance();
 
@@ -989,7 +989,17 @@ impl<'a> Parser<'a> {
             Token::OpenParen => {
                 self.advance();
 
-                // TODO: Make sure nothing broke with `Expression::Parenthesized` gone
+                // `()` -> unit type
+                if let Token::CloseParen = self.current_token() {
+                    self.advance();
+                    let expr = ast::Expression::Literal {
+                        value: Literal::UnitType,
+                        ty: Type::Unit,
+                    };
+
+                    return Node::new(expr, start.extend(*self.previous_span()));
+                }
+
 
                 let inner = self.parse_expression();
                 if let Token::CloseParen = self.current_token() {

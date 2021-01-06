@@ -25,8 +25,8 @@ pub struct JitterContextBuilder<'a> {
 impl<'a> JitterContextBuilder<'a> {
     pub fn new() -> Self {
         let mut settings = settings::builder();
-        // can also do "speed_and_size"
-        settings.set("opt_level", "speed").expect("Optimization");
+        // TODO: Determine options here
+        settings.set("opt_level", "speed_and_size").expect("Optimization");
         
         let isa_builder = isa::lookup(target_lexicon::Triple::host()).expect("isa");
         let isa = isa_builder.finish(settings::Flags::new(settings));
@@ -210,13 +210,12 @@ impl JitterContext {
             );
         }
         
-        let mut function_translator = FunctionTranslator {
-            pointer_type: &self.pointer_type,
-            fn_builder: FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
-            module: &mut self.module,
-            data: super::DataMap::new(),
+        let mut function_translator = FunctionTranslator::new(
+            &self.pointer_type,
+            FunctionBuilder::new(&mut self.fn_context.func, &mut self.fn_builder_context),
+            &mut self.module,
             validation_context,
-        };
+        );
         
         // Generates IR, then finalizes the function, making it ready for the module
         function_translator.translate_function(function, return_type)?;

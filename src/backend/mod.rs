@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use cranelift::prelude::{Value, Variable, EntityRef};
 use cranelift::codegen::ir::StackSlot;
+
 /// Simple helper data structure for associating cranelift `Variable`s with `String` names.
 /// Note that `String` keys are used to remove dependency from source file
 pub struct DataMap {
