@@ -578,10 +578,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let param = ast::FunctionParameter {
                     mutable,
-                    field_name: "self",
+                    name: "self",
                     // FIXME: This will later be replaced with the proper `User` variant. 
                     //        Is there a better approach?
-                    field_type: Type::Unknown,
+                    ty: Type::Unknown,
                 };
                 parameters.push(Node::new(param, span.extend(*self.previous_span())));
             }
@@ -592,8 +592,8 @@ impl<'a> Parser<'a> {
 
                     let param = ast::FunctionParameter {
                         mutable,
-                        field_name,
-                        field_type: self.parse_type(),
+                        name: field_name,
+                        ty: self.parse_type(),
                     };
 
                     // parser_error!(self.file_path, self.current_span(), "Expected type parameter type after `:`. Found `{}", self.current_token());

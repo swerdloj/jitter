@@ -21,15 +21,38 @@ fn hello_from_rust(number: i32) {
     println!("\nHello from Rust! -- {}\n", number);
 }
 
-#[derive(Debug)]
 #[repr(C)]
 struct JitterStruct {
-    a: u8,
-    b: u16,
-    c: u16,
+    a: u32,
+    b: i8,
 }
 
 fn main() {
+    let mut jitter = Jitter! {
+        ["./tests/rewrite_test.jitter"]
+    };
+
+    let test = GetFunction! {
+        jitter::test as fn() -> i32
+    };
+
+    let struct_return = GetFunction! {
+        jitter::struct_return as fn(u32) -> JitterStruct
+    };
+
+    let struct_return2 = |a: u32| -> JitterStruct {
+        struct_return(&a).into()
+    };
+    
+    println!("test() = {}", test().into());
+
+    let mut js = struct_return(&7).into();
+    js.a += 1;
+
+    println!("struct_return(7) = a: {}, b: {}", js.a, js.b);
+}
+
+fn main2() {
     // TODO: growable environment (REPL-style) / hot-reloading
     
     let mut jitter = Jitter! {

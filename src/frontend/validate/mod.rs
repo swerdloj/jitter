@@ -364,7 +364,7 @@ impl<'input> FunctionTable<'input> {
         }
 
         let parameters = validated_prototype.parameters.iter().map(|param| {
-            (param.field_name, param.field_type.clone(), param.mutable)
+            (param.name, param.ty.clone(), param.mutable)
         }).collect();
 
         let definition = FunctionDefinition {

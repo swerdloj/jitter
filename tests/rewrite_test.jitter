@@ -1,0 +1,17 @@
+struct JitterStruct {
+    a: u32,
+    b: i8,
+}
+
+fn test() -> i32 {
+    let x = 12_i32;
+
+    x
+}
+
+fn struct_return(a: u32) -> JitterStruct {
+    JitterStruct {
+        a,
+        b: -12_i8,
+    }
+}

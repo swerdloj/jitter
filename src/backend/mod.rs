@@ -6,57 +6,52 @@ pub mod jit;
 
 use std::collections::HashMap;
 
-use cranelift::prelude::{Value, Variable, EntityRef};
+use cranelift::prelude::Value;
 use cranelift::codegen::ir::StackSlot;
 
-/// Simple helper data structure for associating cranelift `Variable`s with `String` names.
-/// Note that `String` keys are used to remove dependency from source file
-pub struct DataMap {
-    /// IR compatible types are allocated as `Variable`s
-    variables: HashMap<String, Variable>,
-    /// Custom types (e.g.: user-defined) require explicit allocations.  
-    /// This is a map of (address -> stack slot)
-    stack_slots: HashMap<Value, StackSlot>,
-    /// Each variable requires a unique index.
-    /// This is automatically incremented each time `create_var()` is called
-    index: usize,
+
+/// Stores the location of a variable
+#[derive(Clone)]
+pub enum MemoryUsage {
+    Stack(StackSlot),
+    Address(Value),
 }
 
-impl DataMap {
+/// Maps variables to their in-memory representations
+pub struct MemoryMap {
+    /// Map of (variable -> location)
+    variables: HashMap<String, MemoryUsage>,
+
+    /// Special StructReturnSlot. If a function returns a value, it must be stored here.
+    struct_return_slot: Option<StackSlot>,
+}
+
+impl MemoryMap {
     /// Returns an empty `DataMap`
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
-            stack_slots: HashMap::new(),
-            index: 0,
+            struct_return_slot: None,
         }
     }
 
-    /// Stores an IR variable by name
-    pub fn create_var(&mut self, name: impl Into<String>) -> Variable {
-        let var = Variable::new(self.index);
-        self.index += 1;
-        
+    // TODO: Overwrite check?
+    pub fn register_struct_return_slot(&mut self, slot: StackSlot) {
+        self.struct_return_slot = Some(slot);
+    }
+
+    // TODO: Error check?
+    pub fn get_struct_return_slot(&self) -> &StackSlot {
+        self.struct_return_slot.as_ref().expect("get struct return slot")    }
+
+    /// Associates a variable with a StackSlot at the specified address
+    pub fn register_variable(&mut self, name: &str, usage: MemoryUsage) {
         // TODO: Duplicate checking?
-        self.variables.insert(name.into(), var);
-
-        var
+        self.variables.insert(name.into(), usage);
     }
-
-    /// Get an IR variable by name
-    pub fn get_var(&self, name: &str) -> Result<&Variable, String> {
-        self.variables.get(name)
-            .ok_or(format!("Variable `{}` does not exist", name))
-    }
-
-    /// Stores a `StackSlot` by allocation address
-    pub fn register_stack_slot(&mut self, address: Value, slot: StackSlot) {
-        self.stack_slots.insert(address, slot);
-    }
-
-    /// Get the `StackSlot` at a given address
-    pub fn get_stack_slot(&mut self, address: &Value) -> Result<&StackSlot, String> {
-        self.stack_slots.get(address)
-            .ok_or(format!("Address `{}` not found", address))
+    
+    pub fn get_variable_memory(&mut self, name: &str) -> &MemoryUsage {
+        // TODO: Duplicate checking?
+        self.variables.get(name).expect("get variable location")
     }
 }

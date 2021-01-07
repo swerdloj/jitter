@@ -5,6 +5,9 @@ use crate::frontend::validate::types::Type as CompilerType;
 use cranelift::prelude::*;
 use cranelift_module::Module; // for trait functions
 
+use super::MemoryUsage;
+
+
 //////////// CLIF Translation ////////////
 
 // This file simply generates IR -- nothing more
@@ -12,13 +15,19 @@ use cranelift_module::Module; // for trait functions
 // It might be possible to reuse this module for different targets
 // such as generating standalone executables
 
-// Translates a function and its contents into IR
+/// Used to read from or write to a location in memory
+struct MemoryLocation<'a> {
+    pub usage: &'a MemoryUsage,
+    pub offset: i32,
+}
+
+/// Translates a function and its contents into Cranelift IR
 pub struct FunctionTranslator<'input> {
     pub pointer_type: &'input Type,
     pub fn_builder: FunctionBuilder<'input>,
     pub module: &'input mut cranelift_simplejit::SimpleJITModule,
-    // Maps `Variable`s to names and `StackSlot`s to addresses
-    pub data: super::DataMap,
+    // Maps variable names to memory locations
+    pub data: super::MemoryMap,
     pub validation_context: &'input ValidationContext<'input>,
 }
 
@@ -28,14 +37,14 @@ impl<'input> FunctionTranslator<'input> {
             pointer_type,
             fn_builder,
             module,
-            data: super::DataMap::new(),
+            data: super::MemoryMap::new(),
             validation_context,
         }
     }
 
-    pub fn translate_function(&mut self, function: &ast::Function, return_type: Type) -> Result<(), String> {                        
+    pub fn translate_function(&mut self, function: &ast::Function, has_return_value: bool) -> Result<(), String> {                        
         // TEMP: debug
-        // crate::log!("Generating function `{}`:\n", function.prototype.name);
+        crate::log!("Generating function `{}`:\n", function.prototype.name);
         
         // Create the function's entry block with appropriate function parameters
         let entry_block = self.fn_builder.create_block();
@@ -47,102 +56,211 @@ impl<'input> FunctionTranslator<'input> {
         self.fn_builder.seal_block(entry_block);
 
         // Declare the function's parameters (entry block params)
-        for (index, param_node) in function.prototype.parameters.iter().enumerate() {            
-            let param_type = param_node.field_type.ir_type(&self.pointer_type);
-            
-            let var = self.data.create_var(param_node.field_name.to_owned());
-            
-            // Decalre the parameter and its type
-            self.fn_builder.declare_var(var, param_type);
-            // Define the parameter with the values passed when calling the function
-            self.fn_builder.def_var(var, self.fn_builder.block_params(entry_block)[index]);
+        for (index, param) in function.prototype.parameters.iter().enumerate() {                        
+            // Address is passed in to the function rather than actual value
+            let param_addresss = self.fn_builder.block_params(entry_block)[index];
+            self.data.register_variable(param.name, MemoryUsage::Address(param_addresss));
         }
-    
-        // TODO: If function returns a user type, need to allocate
-        //       a `StructReturnSlot`, then store the type data into that
-        //       `StackSlot`
-        //       Note that a special return value is also needed in this case
+
+        // Create a stack pre-allocation for the returned data
+        if has_return_value {
+            // FIXME: Narrowing cast
+            let type_size = self.validation_context.types.size_of(&function.prototype.return_type) as u32;
+
+            let return_slot = self.fn_builder.create_stack_slot(StackSlotData {
+                kind: StackSlotKind::StructReturnSlot,
+                size: type_size,
+                offset: None,
+            });
+
+            self.data.register_struct_return_slot(return_slot);
+        }
         
         for statement in &function.body.block.item {
             self.translate_statement(statement)?;
         }
 
-        // No return type -> just return nothing at end of function
-        // TODO: Ensure that explicit `return ()`s don't break anything
-        //       with this extra return being inserted
-        if return_type.is_invalid() {
+        // FIXME: This doesn't allow users to end functions with `()` or `return;`
+        if !has_return_value {
             self.fn_builder.ins().return_(&[]);
         }
                
         self.fn_builder.finalize();
         
         // TEMP: debug (prints function before optimizations)
-        // crate::log!("{}", self.fn_builder.display(self.module.isa()));
+        crate::log!("{}", self.fn_builder.display(self.module.isa()));
 
         Ok(())
+    }
+
+    /// Writes the given value to the specified location
+    fn write_to_memory(&mut self, location: &MemoryLocation, value: Value) {
+        match location.usage {
+            MemoryUsage::Stack(slot) => {
+                self.fn_builder.ins().stack_store(value, *slot, location.offset);
+            }
+
+            MemoryUsage::Address(address) => {
+                self.fn_builder.ins().store(MemFlags::trusted(), value, *address, location.offset);
+            }
+        }
+    }
+
+    /// Reads the specified location as the given type
+    fn read_from_memory(&mut self, location: &MemoryLocation, target_type: Type) -> Value {
+        match location.usage {
+            MemoryUsage::Stack(slot) => {
+                self.fn_builder.ins().stack_load(target_type, *slot, location.offset)
+            }
+
+            MemoryUsage::Address(address) => {
+                self.fn_builder.ins().load(target_type, MemFlags::trusted(), *address, location.offset)
+            }
+        }
     }
     
     fn translate_statement(&mut self, statement: &ast::Statement) -> Result<(), String> {
         // NOTE: All types will be known and validated at this point
         match statement {
-            // Create a new variable and assign it if an expression is given
             ast::Statement::Let { ident, ty, value, .. } => {
-                let var = self.data.create_var(*ident);
-
-                // Unit type is declared as invalid. 
-                // This mean variables assigned type `()` can still be referenced
-                // (perhaps for traits?), but cannot be assigned illegally
-                self.fn_builder.declare_var(var,ty.ir_type(&self.pointer_type));
+                // FIXME: Narrowing cast
+                let type_size = self.validation_context.types.size_of(ty) as u32;
                 
-                if let Some(expr) = value {
-                    let assigned_value = self.translate_expression(expr)?;
-                    // Unit type has no actual representation (zero-sized)
-                    if !ty.is_unit() {
-                        self.fn_builder.def_var(var, assigned_value);
-                    }
+                // Allocate this variable
+                let stack_slot = self.fn_builder.create_stack_slot(StackSlotData {
+                    kind: StackSlotKind::ExplicitSlot,
+                    size: type_size,
+                    offset: None,
+                });
+                
+                let memory_usage = MemoryUsage::Stack(stack_slot);
+                
+                // Fill the variable with data if assigned
+                if let Some(assignment) = value {
+                    let mut memory_location = MemoryLocation {
+                        usage: &memory_usage,
+                        offset: 0,
+                    };
+
+                    self.translate_expression(assignment, &mut memory_location);
                 }
+
+                self.data.register_variable(ident, memory_usage);
             }
             
-            // Assign a value to a variable
             ast::Statement::Assign { variable, operator, expression } => {
-                let expr_value = self.translate_expression(expression)?;
-                let var = self.data.get_var(variable)?;
-                
-                match operator.item {
-                    ast::AssignmentOp::Assign => {
-                        self.fn_builder.def_var(*var, expr_value);
-                    }
-
-                    // Transformed during validation
-                    _ => unreachable!(),
-                }
+                todo!();
             }
 
+            // Move expression result to StructReturn, then return its address
             ast::Statement::ImplicitReturn { expression, is_function_return } => {
-                let expr_value = self.translate_expression(expression)?;
-                
                 if *is_function_return {
-                    self.fn_builder.ins().return_(&[expr_value]);
-                } else {
-                    todo!()
+                    // 1. Get StructReturn slot
+                    let return_slot = *self.data.get_struct_return_slot();
+
+                    // 2. Fill slot with data
+                    self.translate_expression(expression, &mut MemoryLocation {
+                        usage: &MemoryUsage::Stack(return_slot),
+                        offset: 0,
+                    });
+
+                    // 3. Return the StructReturn address
+                    let return_address = self.fn_builder.ins().stack_addr(*self.pointer_type, return_slot, 0);
+                    self.fn_builder.ins().return_(&[return_address]);
                 }
             }
             
             // FIXME: This can be represented as an ImplicitReturn with `is_function_return` flag
             ast::Statement::Return { expression } => {
-                let return_value = self.translate_expression(expression)?;
-                self.fn_builder.ins().return_(&[return_value]);
+                todo!()
             }
             
             ast::Statement::Expression(expr) => {
-                self.translate_expression(&expr)?;
+                todo!()
             }
         }
 
         Ok(())
     }
     
-    fn translate_expression(&mut self, expression: &ast::Expression) -> Result<Value, String> {
+    fn translate_expression(&mut self, expression: &ast::Expression, memory_location: &mut MemoryLocation) {
+        match expression {
+            ast::Expression::Literal { value, ty } => {
+                self.translate_expression_literal(value, ty, memory_location);
+            }
+
+            ast::Expression::FieldConstructor { ty, fields } => {
+                for (field, expression) in fields {
+                    // FIXME: Narrowing cast
+                    let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i32;
+                    memory_location.offset = field_offset;
+
+                    self.translate_expression(expression, memory_location);
+                }
+            },
+
+            ast::Expression::BinaryExpression { lhs, op, rhs, ty } => todo!(),
+            ast::Expression::UnaryExpression { op, expr, ty } => todo!(),
+            ast::Expression::FieldAccess { base_expr, field, ty } => todo!(),
+            ast::Expression::FunctionCall { name, inputs, ty } => todo!(),
+            ast::Expression::Block(_) => todo!(),
+
+            // Copy ident's data into the newly assigned location
+            ast::Expression::Ident { name, ty } => {
+                // Target slot
+                // Clone is needed to avoid borrow. Should be safe (and cheap)
+                let target_usage = self.data.get_variable_memory(name).clone();
+
+                let mut target_location = MemoryLocation {
+                    usage: &target_usage,
+                    offset: 0,
+                };
+
+                // Copy the data over
+                // FIXME: This is only needed in case the stack_slot type is different
+                //        e.g.: Copy `Explicit` slot into `StructReturn` slot
+                for byte in 0..self.validation_context.types.size_of(ty) {
+                    // FIXME: Narrowing cast
+                    memory_location.offset = byte as i32;
+                    target_location.offset = byte as i32;
+
+                    let value = self.read_from_memory(&target_location, types::I8);
+                    self.write_to_memory(&memory_location, value);
+                }
+            },
+        }
+    }
+
+    fn translate_expression_literal(&mut self, literal: &ast::Literal, literal_type: &CompilerType, memory_location: &mut MemoryLocation) {        
+        let value = match literal {
+            ast::Literal::Integer(integer) => {
+                // FIXME: Narrowing cast
+                self.fn_builder.ins().iconst(literal_type.ir_type(self.pointer_type), *integer as i64)
+            }
+
+            ast::Literal::Float(float) => {
+                // if not f32, then f64
+                if let CompilerType::f32 = literal_type {
+                    self.fn_builder.ins()
+                        .f32const(*float as f32)
+                } else {
+                    self.fn_builder.ins()
+                        .f64const(*float)
+                }
+            }
+
+            ast::Literal::UnitType => {
+                todo!("Assigning unit values")
+            }
+        };
+
+        // Store the value into the designated location
+        self.write_to_memory(&memory_location, value);
+    }
+
+    // TODO: Remove this once everything is functional again
+    /*
+    fn translate_expression_old(&mut self, expression: &ast::Expression) -> Result<Value, String> {
         let value = match expression {
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
                 let l_value = self.translate_expression(lhs)?;
@@ -322,5 +440,6 @@ impl<'input> FunctionTranslator<'input> {
         };
 
         Ok(value)
-    }   
+    }
+    */
 }

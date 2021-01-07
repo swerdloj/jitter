@@ -160,8 +160,8 @@ pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;
 #[derive(Debug)]
 pub struct FunctionParameter<'input> {
     pub mutable: bool,
-    pub field_name: &'input str,
-    pub field_type: Type<'input>,
+    pub name: &'input str,
+    pub ty: Type<'input>,
 }
 
 #[derive(Debug, Clone)]

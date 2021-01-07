@@ -39,11 +39,11 @@ impl<'a> JitterContextBuilder<'a> {
         }
     }
 
-    // pub fn with_function(mut self, name: &str, function_address: *const u8) -> Self {
-    /// Call this using the `FFI!` macro:  
-    /// `builder.with_function(FFI!(function_name))`
-    pub fn with_function(mut self, function: (&str, *const u8)) -> Self {
-        self.simple_jit_builder.symbol(function.0, function.1);
+    /// Defines a Rust function called as `alias` with the body `pointer`.
+    /// Usage:  
+    /// `context.with_function("function_name", function_name as _)`
+    pub fn with_function(mut self, alias: &str, pointer: *const u8) -> Self {
+        self.simple_jit_builder.symbol(alias, pointer);
         self
     }
 
@@ -161,13 +161,15 @@ impl JitterContext {
 
         let mut signature = self.module.make_signature();
 
-        for (_field_name, ty, _mutable) in &definition.parameters {
-            signature.params.push(AbiParam::new(ty.ir_type(&self.pointer_type)));
+        // All function inputs are the value's stack locations
+        for _ in &definition.parameters {
+            signature.params.push(AbiParam::new(self.pointer_type));
         }
 
         // Unit return type -> nothing returned
         if !definition.return_type.is_unit() {
-            signature.returns.push(AbiParam::new(definition.return_type.ir_type(&self.pointer_type)));
+            // Return value is the address of stack pre-allocation
+            signature.returns.push(AbiParam::special(self.pointer_type, codegen::ir::ArgumentPurpose::StructReturn));
         }
 
         let linkage = if definition.is_extern {
@@ -185,28 +187,27 @@ impl JitterContext {
         Ok(func_id)
     }
 
-    // TODO: Much of this functionality needs to be moved to `codegen.rs`
-    //       My goal is to have code generation occur **only** in `codegen.rs`
-    //       Nothing else should touch IR generation
+    // TODO: Consider moving this into codegen.rs to put all codegen in one place
     fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
         let func_id = self.functions.get(function.prototype.name)
             .ok_or(format!("Attempted to translate an unregistered function: {}", function.prototype.name))?;
 
-        // Define the function parameters
-        for parameter in &function.prototype.parameters.item {
-            let param_type = parameter.field_type.ir_type(&self.pointer_type);
-            
+        // Define the function parameters (passed in by stack address)
+        for _ in &function.prototype.parameters.item {            
             self.fn_context.func.signature.params.push(
-                AbiParam::new(param_type)
+                AbiParam::new(self.pointer_type)
             );
         }
         
-        // Set return variable
-        let return_type = function.prototype.return_type.ir_type(&self.pointer_type);
+        let has_return_value = !function.prototype.return_type.is_unit();
 
-        if return_type != types::INVALID {
+        // Returns the stack pre-allocation address
+        if has_return_value {
             self.fn_context.func.signature.returns.push(
-                AbiParam::new(return_type)
+                AbiParam::special(
+                    self.pointer_type, 
+                    cranelift::codegen::ir::ArgumentPurpose::StructReturn
+                )
             );
         }
         
@@ -218,8 +219,9 @@ impl JitterContext {
         );
         
         // Generates IR, then finalizes the function, making it ready for the module
-        function_translator.translate_function(function, return_type)?;
-        // Performs constant folding (only optimization for now)
+        function_translator.translate_function(function, has_return_value)?;
+
+        // Performs constant folding (I'm not sure what else is done elsewhere)
         cranelift_preopt::optimize(&mut self.fn_context, self.module.isa()).expect("Optimize");
 
         // TEMP: Debug

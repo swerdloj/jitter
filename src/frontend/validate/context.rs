@@ -200,7 +200,7 @@ impl<'input> Context<'input> {
         self.types.assert_valid(&prototype.return_type)?;
 
         for param in &prototype.parameters.item {
-            self.types.assert_valid(&param.field_type)?;
+            self.types.assert_valid(&param.ty)?;
         }
 
         Ok(())
@@ -214,7 +214,7 @@ impl<'input> Context<'input> {
         self.scopes.push_scope();
         for param in &function.prototype.parameters.item {
             // NOTE: Function parameters are passed in -> no allocation information needed
-            self.scopes.add_var_to_scope(param.field_name, param.mutable, param.field_type.clone(), MemoryUsage::FunctionParam)?;
+            self.scopes.add_var_to_scope(param.name, param.mutable, param.ty.clone(), MemoryUsage::FunctionParam)?;
         }
         
         // Validate the function body
