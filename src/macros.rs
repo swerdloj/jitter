@@ -80,7 +80,6 @@ macro_rules! GetFunction {
             ($context.get_fn(stringify!($function)))
         }
 
-
         // TODO: Could wrap the above in a closure like so:
         //       Requires naming the closure inputs.
         //       This would need a proc macro, but eliminates FFI types.

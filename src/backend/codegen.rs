@@ -139,54 +139,90 @@ impl<'input> FunctionTranslator<'input> {
             ast::Expression::FieldAccess { base_expr, field, ty } => {
                 let base_address = self.translate_expression(base_expr);
                 let field_offset = self.validation_context.get_field_offset(base_expr.get_type(), field).unwrap();
-
                 // return the address of the desired field
                 self.fn_builder.ins().iadd_imm(base_address, field_offset as i64)
             }
 
-            ast::Expression::FieldConstructor { ty, fields } => {
-                // 1. Allocate memory for the object
-                // FIXME: Narrowing cast
-                let size = self.validation_context.types.size_of(ty) as u32;
-                let slot = self.create_explicit_stack_allocation(size);
+            ast::Expression::FieldConstructor { ty, fields } 
+                => self.translate_field_constructor(ty, fields),
 
-                // TODO: Is there any way to write to a given address
-                //       rather than needing to copy like this?
+            ast::Expression::Literal { value, ty } 
+                => self.translate_expression_literal(value, ty),
 
-                for (field, expression) in fields {
-                    // 2.1 Obtain the address containing the corresponding field's data
-                    let field_value_address = self.translate_expression(expression);
-                    let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i32;
-                    
-                    // 2.2 Copy that data's bytes into the assigned slot
-                    for byte in 0..self.validation_context.types.size_of(expression.get_type()) {
-                        let offset = byte as i32 + field_offset;
-
-                        let value = self.fn_builder.ins().load(types::I8, MemFlags::trusted(), field_value_address, byte as i32);
-                        self.fn_builder.ins().stack_store(value, slot, offset as i32);
-                    }
-                }
-
-                // 3. Return the address of the newly instantiated object
-                self.fn_builder.ins().stack_addr(*self.pointer_type, slot, 0)
-            }
-
-            ast::Expression::Literal { value, ty } => 
-                self.translate_expression_literal(value, ty),
+            ast::Expression::FunctionCall { name, inputs, ty } 
+                => self.translate_expression_function_call(name, inputs, ty),
 
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
                 todo!()
             }
+
             ast::Expression::UnaryExpression { op, expr, ty } => {
                 todo!()
             }
-            ast::Expression::FunctionCall { name, inputs, ty } => {
-                todo!()
-            }
+
             ast::Expression::Block(_) => {
                 todo!()
             }
         }
+    }
+
+    fn translate_expression_function_call(&mut self, name: &str, inputs: &Vec<ast::Node<ast::Expression>>, ty: &CompilerType) -> Value {
+        let func_id = if let cranelift_module::FuncOrDataId::Func(id) = self.module.declarations().get_name(name).unwrap() {
+            id
+        } else {
+            unreachable!()
+        };
+        
+        // FIXME: This only needs to be inserted once per function
+        //        If a function calls another function more than once, this will be inserted
+        //        again for each call
+        let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
+
+        let mut passed_params = Vec::new();
+        for input in inputs {
+            passed_params.push(
+                self.translate_expression(input)
+            );
+        }
+
+        let call = self.fn_builder.ins().call(func_ref, &passed_params);
+
+        // Cranelift allows multiple returns, but Jitter only allows one
+        let maybe_multiple_return = self.fn_builder.inst_results(call);
+
+        // Either one value is returned or none
+        if let Some(single_return) = maybe_multiple_return.get(0) {
+            *single_return
+        } else {
+            todo!("unit return")
+        }
+    }
+
+    fn translate_field_constructor(&mut self, ty: &CompilerType, fields: &std::collections::HashMap<&str, ast::Node<ast::Expression>>) -> Value {
+        // 1. Allocate memory for the object
+        // FIXME: Narrowing cast
+        let size = self.validation_context.types.size_of(ty) as u32;
+        let slot = self.create_explicit_stack_allocation(size);
+
+        // TODO: Is there any way to write to a given address
+        //       rather than needing to copy like this?
+
+        for (field, expression) in fields {
+            // 2.1 Obtain the address containing the corresponding field's data
+            let field_value_address = self.translate_expression(expression);
+            let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i32;
+            
+            // 2.2 Copy that data's bytes into the assigned slot
+            for byte in 0..self.validation_context.types.size_of(expression.get_type()) {
+                let offset = byte as i32 + field_offset;
+
+                let value = self.fn_builder.ins().load(types::I8, MemFlags::trusted(), field_value_address, byte as i32);
+                self.fn_builder.ins().stack_store(value, slot, offset as i32);
+            }
+        }
+
+        // 3. Return the address of the newly instantiated object
+        self.fn_builder.ins().stack_addr(*self.pointer_type, slot, 0)
     }
 
     // Allocate the data on the stack, fill it, and return the address

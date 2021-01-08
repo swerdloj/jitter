@@ -49,10 +49,15 @@ fn main() {
         jitter::struct_return as fn(u32, i8) -> JitterStruct
     };
 
+    let function_call = GetFunction! {
+        jitter::function_call as fn() -> JitterStruct
+    };
+
     println!("test() = {}", test().into());
     println!("params(7, 123) = {}", params(&7, &123).into());
     println!("structs(100, 7) = {}", structs(&100, &-70).into());
     println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
+    println!("function_call() = {:?}", function_call().into());
 }
 
 fn main2() {

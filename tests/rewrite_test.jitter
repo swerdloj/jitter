@@ -3,16 +3,19 @@ struct JitterStruct {
     b: i8,
 }
 
+// Works
 fn test() -> i32 {
     let x = 12_i32;
 
     x
 }
 
+// Works
 fn params(a: u32, b: u32) -> u32 {
     b
 }
 
+// Works
 fn structs(a: u32, b: i8) -> i8 {
     let x = JitterStruct {
         a,
@@ -22,9 +25,15 @@ fn structs(a: u32, b: i8) -> i8 {
     x.b
 }
 
+// Works
 fn struct_return(a: u32, b: i8) -> JitterStruct {
     JitterStruct {
         a,
         b,
     }
+}
+
+// Works
+fn function_call() -> JitterStruct {
+    struct_return(1_u32, -2_i8)
 }
