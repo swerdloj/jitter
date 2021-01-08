@@ -9,10 +9,12 @@ use crate::frontend::parse::ast;
 
 ///////////////////// TYPES /////////////////////
 
+// NOTE: Offsets are i32 for Cranelift
+
 /// Stores struct definitions
 struct StructDefinition<'input> {
     /// Map of field_name -> (type, byte offset)
-    fields: HashMap<&'input str, (Type<'input>, usize)>,
+    fields: HashMap<&'input str, (Type<'input>, i32)>,
 }
 
 pub struct TypeTableEntry {

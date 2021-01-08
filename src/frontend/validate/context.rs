@@ -104,7 +104,7 @@ impl<'input> Context<'input> {
 
     /// Registers and lays out a "repr(C)" struct
     pub fn register_struct(&mut self, struct_: &ast::Struct<'input>) -> Result<(), String> {
-        let needed_padding = |offset, alignment| {
+        let needed_padding = |offset: i32, alignment: i32| {
             let misalignment = offset % alignment;
             if misalignment > 0 {
                 alignment - misalignment
@@ -120,18 +120,20 @@ impl<'input> Context<'input> {
 
         let mut fields = HashMap::new();
         
-        let mut offset = 0;
+        let mut offset = 0_i32;
         // Determine each field's aligned offset
         for field in &struct_.fields.item {
             // Account for any needed padding
             let field_alignment = self.types.alignment_of(&field.field_type);
-            offset += needed_padding(offset, field_alignment);
+            // FIXME: Narrowing cast
+            offset += needed_padding(offset, field_alignment as i32);
             
             // Place field at current offset
             fields.insert(field.field_name, (field.field_type.clone(), offset));
             
             // Account for the size of the field
-            offset += self.types.size_of(&field.field_type);
+            // FIXME: Narrowing cast
+            offset += self.types.size_of(&field.field_type) as i32;
         }
         
         self.structs.insert(
@@ -144,8 +146,9 @@ impl<'input> Context<'input> {
         });
 
         // Add final padding for the struct's alignment
-        let size = offset + needed_padding(offset, alignment);
-        self.types.insert(&Type::User(struct_.name), TypeTableEntry::new(size, alignment))?;
+        // FIXME: Narrowing cast
+        let size = offset + needed_padding(offset, alignment as i32);
+        self.types.insert(&Type::User(struct_.name), TypeTableEntry::new(size as usize, alignment))?;
 
         Ok(())
     }
@@ -181,7 +184,7 @@ impl<'input> Context<'input> {
 
     /// Returns the byte offset of a field for the given type.  
     /// Note that the type **must be the base type**. References return errors.
-    pub fn get_field_offset(&self, ty: &Type<'input>, field: &'input str) -> Result<usize, String> {
+    pub fn get_field_offset(&self, ty: &Type<'input>, field: &'input str) -> Result<i32, String> {
         match ty {
             Type::Reference { .. } => Err(format!("Field offsets cannot be obtained from references")),
 

@@ -40,16 +40,29 @@ fn main() {
         jitter::struct_return as fn(u32) -> JitterStruct
     };
 
-    let struct_return2 = |a: u32| -> JitterStruct {
-        struct_return(&a).into()
+    let field_access = GetFunction! {
+        jitter::field_access as fn() -> i8
     };
-    
+
+    let function_calls = GetFunction! {
+        jitter::function_calls as fn() -> JitterStruct
+    };
+
+    let function_calls2 = GetFunction! {
+        jitter::function_calls2 as fn() -> i32
+    };
+
+    // let test: fn() -> i32 = unsafe { std::mem::transmute(jitter.get_fn("test")) };
     println!("test() = {}", test().into());
 
     let mut js = struct_return(&7).into();
     js.a += 1;
 
     println!("struct_return(7) = a: {}, b: {}", js.a, js.b);
+    println!("field_access() = {}", field_access().into());
+    let js2 = function_calls().into();
+    println!("function_calls() = a: {}, b: {}", js2.a, js2.b);
+    println!("function_calls2() = {}", function_calls2().into());
 }
 
 fn main2() {

@@ -169,7 +169,12 @@ impl JitterContext {
         // Unit return type -> nothing returned
         if !definition.return_type.is_unit() {
             // Return value is the address of stack pre-allocation
-            signature.returns.push(AbiParam::special(self.pointer_type, codegen::ir::ArgumentPurpose::StructReturn));
+            signature.returns.push(
+                AbiParam::special(
+                    self.pointer_type, 
+                    codegen::ir::ArgumentPurpose::StructReturn
+                )
+            );
         }
 
         let linkage = if definition.is_extern {
@@ -223,9 +228,6 @@ impl JitterContext {
 
         // Performs constant folding (I'm not sure what else is done elsewhere)
         cranelift_preopt::optimize(&mut self.fn_context, self.module.isa()).expect("Optimize");
-
-        // TEMP: Debug
-        // crate::log!("{}", self.fn_context.func.display(self.module.isa()));
         
         // Define the function
         self.module

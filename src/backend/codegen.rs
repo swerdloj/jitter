@@ -16,8 +16,9 @@ use super::MemoryUsage;
 // such as generating standalone executables
 
 /// Used to read from or write to a location in memory
-struct MemoryLocation<'a> {
-    pub usage: &'a MemoryUsage,
+#[derive(Clone)]
+struct MemoryLocation {
+    pub usage: MemoryUsage,
     pub offset: i32,
 }
 
@@ -97,11 +98,11 @@ impl<'input> FunctionTranslator<'input> {
     fn write_to_memory(&mut self, location: &MemoryLocation, value: Value) {
         match location.usage {
             MemoryUsage::Stack(slot) => {
-                self.fn_builder.ins().stack_store(value, *slot, location.offset);
+                self.fn_builder.ins().stack_store(value, slot, location.offset);
             }
 
             MemoryUsage::Address(address) => {
-                self.fn_builder.ins().store(MemFlags::trusted(), value, *address, location.offset);
+                self.fn_builder.ins().store(MemFlags::trusted(), value, address, location.offset);
             }
         }
     }
@@ -110,12 +111,26 @@ impl<'input> FunctionTranslator<'input> {
     fn read_from_memory(&mut self, location: &MemoryLocation, target_type: Type) -> Value {
         match location.usage {
             MemoryUsage::Stack(slot) => {
-                self.fn_builder.ins().stack_load(target_type, *slot, location.offset)
+                self.fn_builder.ins().stack_load(target_type, slot, location.offset)
             }
 
             MemoryUsage::Address(address) => {
-                self.fn_builder.ins().load(target_type, MemFlags::trusted(), *address, location.offset)
+                self.fn_builder.ins().load(target_type, MemFlags::trusted(), address, location.offset)
             }
+        }
+    }
+
+    /// Returns the physical address of the given location
+    fn get_location_address(&mut self, location: &MemoryLocation) -> Value {
+        match location.usage {
+            MemoryUsage::Stack(slot) => {
+                self.fn_builder.ins().stack_addr(*self.pointer_type, slot, location.offset)
+            }
+
+            MemoryUsage::Address(address) => {
+                // TODO: Ensure this is the proper way to get the final address
+                self.fn_builder.ins().iadd_imm(address, location.offset as i64)
+            },
         }
     }
     
@@ -132,20 +147,18 @@ impl<'input> FunctionTranslator<'input> {
                     size: type_size,
                     offset: None,
                 });
-                
-                let memory_usage = MemoryUsage::Stack(stack_slot);
-                
+                                
+                let mut memory_location = MemoryLocation {
+                    usage: MemoryUsage::Stack(stack_slot),
+                    offset: 0,
+                };
+
                 // Fill the variable with data if assigned
                 if let Some(assignment) = value {
-                    let mut memory_location = MemoryLocation {
-                        usage: &memory_usage,
-                        offset: 0,
-                    };
-
                     self.translate_expression(assignment, &mut memory_location);
                 }
 
-                self.data.register_variable(ident, memory_usage);
+                self.data.register_variable(ident, memory_location.usage);
             }
             
             ast::Statement::Assign { variable, operator, expression } => {
@@ -155,17 +168,32 @@ impl<'input> FunctionTranslator<'input> {
             // Move expression result to StructReturn, then return its address
             ast::Statement::ImplicitReturn { expression, is_function_return } => {
                 if *is_function_return {
-                    // 1. Get StructReturn slot
+                    // Get StructReturn slot
                     let return_slot = *self.data.get_struct_return_slot();
-
-                    // 2. Fill slot with data
-                    self.translate_expression(expression, &mut MemoryLocation {
-                        usage: &MemoryUsage::Stack(return_slot),
+                    let mut return_slot_location = MemoryLocation {
+                        usage: MemoryUsage::Stack(return_slot),
                         offset: 0,
-                    });
+                    };
 
-                    // 3. Return the StructReturn address
-                    let return_address = self.fn_builder.ins().stack_addr(*self.pointer_type, return_slot, 0);
+                    // Write data to be returned
+                    let mut data = return_slot_location.clone();
+                    self.translate_expression(expression, &mut data);
+
+                    // FIXME: Copying all the data over is expensive and wasteful
+                    //        This is only needed in the case of copying explicit slot data
+                    //        to return slot.
+                    for byte in 0..self.validation_context.types.size_of(expression.get_type()) {
+                        // FIXME: Narrowing cast
+                        data.offset = byte as i32;
+                        return_slot_location.offset = byte as i32;
+
+                        let value = self.read_from_memory(&data, types::I8);
+                        self.write_to_memory(&return_slot_location, value);
+                    }
+
+                    // Return the StructReturn address
+                    return_slot_location.offset = 0;
+                    let return_address = self.get_location_address(&return_slot_location);
                     self.fn_builder.ins().return_(&[return_address]);
                 }
             }
@@ -191,42 +219,68 @@ impl<'input> FunctionTranslator<'input> {
 
             ast::Expression::FieldConstructor { ty, fields } => {
                 for (field, expression) in fields {
-                    // FIXME: Narrowing cast
-                    let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i32;
+                    let field_offset = self.validation_context.get_field_offset(ty, field).unwrap();
+                    
                     memory_location.offset = field_offset;
+                    let mut memory_location2 = memory_location.clone();
 
-                    self.translate_expression(expression, memory_location);
+                    self.translate_expression(expression, &mut memory_location2);
+                }
+            },
+
+            // "Walks" the offsets to the proper location 
+            // Note that subsequent field acceses refer to the same contiguous allocation
+            ast::Expression::FieldAccess { base_expr, field, ty: _ } => {
+                let field_offset = self.validation_context.get_field_offset(base_expr.get_type(), field)
+                    .expect("Get field offset");
+
+                memory_location.offset = field_offset;
+                
+                self.translate_expression(base_expr, memory_location);
+            },
+
+            ast::Expression::FunctionCall { name, inputs, ty } => {
+                let func_id = if let cranelift_module::FuncOrDataId::Func(id) = self.module.declarations().get_name(name).expect("get_function_id_for_call") {
+                    id
+                } else {
+                    // NOTE: The given AST is assumed to be valid
+                    unreachable!();
+                    // return Err(format!("Not a function: {}", name));
+                };
+            
+                // FIXME: This is only needed once per referenced function 
+                //        (declares same function multiple times in some cases)
+                let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
+
+                // Obtain argument values
+                let mut values = Vec::new();
+                for arg in inputs {
+                    self.translate_expression(arg, memory_location);
+                    values.push(self.get_location_address(memory_location));
+                }
+
+                let call = self.fn_builder.ins().call(func_ref, &values);
+
+                // Result is an address -> want data
+                let result_address = self.fn_builder.inst_results(call)
+                    .get(0)
+                    .map(|value| *value);
+
+                // Store result in memory
+                if let Some(address) = result_address {
+                    memory_location.usage = MemoryUsage::Address(address);
                 }
             },
 
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => todo!(),
             ast::Expression::UnaryExpression { op, expr, ty } => todo!(),
-            ast::Expression::FieldAccess { base_expr, field, ty } => todo!(),
-            ast::Expression::FunctionCall { name, inputs, ty } => todo!(),
             ast::Expression::Block(_) => todo!(),
 
-            // Copy ident's data into the newly assigned location
+            // Point to the variable's address
             ast::Expression::Ident { name, ty } => {
-                // Target slot
-                // Clone is needed to avoid borrow. Should be safe (and cheap)
-                let target_usage = self.data.get_variable_memory(name).clone();
-
-                let mut target_location = MemoryLocation {
-                    usage: &target_usage,
-                    offset: 0,
-                };
-
-                // Copy the data over
-                // FIXME: This is only needed in case the stack_slot type is different
-                //        e.g.: Copy `Explicit` slot into `StructReturn` slot
-                for byte in 0..self.validation_context.types.size_of(ty) {
-                    // FIXME: Narrowing cast
-                    memory_location.offset = byte as i32;
-                    target_location.offset = byte as i32;
-
-                    let value = self.read_from_memory(&target_location, types::I8);
-                    self.write_to_memory(&memory_location, value);
-                }
+                let ident_usage = self.data.get_variable_memory(name).clone();
+                
+                memory_location.usage = ident_usage;
             },
         }
     }
@@ -241,11 +295,9 @@ impl<'input> FunctionTranslator<'input> {
             ast::Literal::Float(float) => {
                 // if not f32, then f64
                 if let CompilerType::f32 = literal_type {
-                    self.fn_builder.ins()
-                        .f32const(*float as f32)
+                    self.fn_builder.ins().f32const(*float as f32)
                 } else {
-                    self.fn_builder.ins()
-                        .f64const(*float)
+                    self.fn_builder.ins().f64const(*float)
                 }
             }
 
