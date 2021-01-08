@@ -9,37 +9,22 @@ fn test() -> i32 {
     x
 }
 
-fn struct_return(a: u32) -> JitterStruct {
-    JitterStruct {
-        a,
-        b: -12_i8,
-    }
+fn params(a: u32, b: u32) -> u32 {
+    b
 }
 
-fn struct_return2() -> JitterStruct {
-    JitterStruct {
-        a: 100_u32,
-        b: -12_i8,
-    }
-}
-
-fn field_access() -> i8 {
+fn structs(a: u32, b: i8) -> i8 {
     let x = JitterStruct {
-        a: 9_u32,
-        b: 2_i8,
+        a,
+        b,
     };
 
     x.b
 }
 
-// fn function_calls1() -> u32 {
-//     struct_return(10_u32).a
-// }
-
-fn function_calls() -> JitterStruct {
-    struct_return2()
-}
-
-fn function_calls2() -> i32 {
-    test()
+fn struct_return(a: u32, b: i8) -> JitterStruct {
+    JitterStruct {
+        a,
+        b,
+    }
 }

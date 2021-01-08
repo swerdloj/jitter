@@ -21,6 +21,7 @@ fn hello_from_rust(number: i32) {
     println!("\nHello from Rust! -- {}\n", number);
 }
 
+#[derive(Debug)]
 #[repr(C)]
 struct JitterStruct {
     a: u32,
@@ -36,33 +37,22 @@ fn main() {
         jitter::test as fn() -> i32
     };
 
+    let params = GetFunction! {
+        jitter::params as fn(u32, u32) -> u32
+    };
+
+    let structs = GetFunction! {
+        jitter::structs as fn(u32, i8) -> i8
+    };
+
     let struct_return = GetFunction! {
-        jitter::struct_return as fn(u32) -> JitterStruct
+        jitter::struct_return as fn(u32, i8) -> JitterStruct
     };
 
-    let field_access = GetFunction! {
-        jitter::field_access as fn() -> i8
-    };
-
-    let function_calls = GetFunction! {
-        jitter::function_calls as fn() -> JitterStruct
-    };
-
-    let function_calls2 = GetFunction! {
-        jitter::function_calls2 as fn() -> i32
-    };
-
-    // let test: fn() -> i32 = unsafe { std::mem::transmute(jitter.get_fn("test")) };
     println!("test() = {}", test().into());
-
-    let mut js = struct_return(&7).into();
-    js.a += 1;
-
-    println!("struct_return(7) = a: {}, b: {}", js.a, js.b);
-    println!("field_access() = {}", field_access().into());
-    let js2 = function_calls().into();
-    println!("function_calls() = a: {}, b: {}", js2.a, js2.b);
-    println!("function_calls2() = {}", function_calls2().into());
+    println!("params(7, 123) = {}", params(&7, &123).into());
+    println!("structs(100, 7) = {}", structs(&100, &-70).into());
+    println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
 }
 
 fn main2() {
