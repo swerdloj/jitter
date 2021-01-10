@@ -174,7 +174,7 @@ pub enum Statement<'input> {
     },
 
     Assign {
-        variable: &'input str,
+        lhs: Node<Expression<'input>>,
         operator: Node<AssignmentOp>,
         expression: Node<Expression<'input>>,
     },

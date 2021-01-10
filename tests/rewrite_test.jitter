@@ -1,11 +1,22 @@
 struct JitterStruct {
     a: u32,
-    b: i8,
+    b: i32,
+}
+
+extern {
+    fn print_i32(n: i32);
+    fn print_u32(n: u32);
+    fn hello_from_rust(n: u32);
+}
+
+fn FFI(a: u32) {
+    hello_from_rust(a);
 }
 
 // Works
 fn test() -> i32 {
-    let x = 12_i32;
+    let x = -2_i32;
+    // x = -4_i32;
 
     x
 }
@@ -16,17 +27,22 @@ fn params(a: u32, b: u32) -> u32 {
 }
 
 // Works
-fn structs(a: u32, b: i8) -> i8 {
+fn structs(a: u32, b: i32) -> i32 {
     let x = JitterStruct {
         a,
         b,
     };
 
+    x.b = 7_i32;
+
     x.b
 }
 
 // Works
-fn struct_return(a: u32, b: i8) -> JitterStruct {
+fn struct_return(a: u32, b: i32) -> JitterStruct {
+    print_u32(a);
+    print_i32(b);
+
     JitterStruct {
         a,
         b,
@@ -34,6 +50,26 @@ fn struct_return(a: u32, b: i8) -> JitterStruct {
 }
 
 // Works
-fn function_call() -> JitterStruct {
-    struct_return(1_u32, -2_i8)
+fn function_call1() -> i32 {
+    test()
+}
+
+fn ret_u32() -> u32 {
+    77_u32
+}
+
+// Works when literals are passed to `struct_return`
+// Doesn't work when using function calls
+fn function_call2() -> JitterStruct {
+    // let a = ret_u32();
+    // let b = 12_i32;
+    // let b = test();
+
+    // print_u32(ret_u32());
+    // print_i32(test());
+    
+    // struct_return(a, b);
+
+    // Goal: Make this work
+    struct_return(ret_u32(), test())
 }

@@ -100,8 +100,15 @@ impl<'input> FunctionTranslator<'input> {
                 }
             }
             
-            ast::Statement::Assign { variable, operator, expression } => {
-                todo!()
+            ast::Statement::Assign { lhs, operator: _, expression } => {
+                let destination_address = self.translate_expression(lhs);
+                let target_address = self.translate_expression(expression);
+                
+                // Copy the data from target to destination
+                let size = self.validation_context.types.size_of(expression.get_type());
+                let size_value = self.fn_builder.ins().iconst(*self.pointer_type, size as i64);
+
+                self.fn_builder.call_memcpy(self.module.target_config(), destination_address, target_address, size_value);
             }
 
             ast::Statement::ImplicitReturn { expression, is_function_return } => {
@@ -117,26 +124,34 @@ impl<'input> FunctionTranslator<'input> {
 
             // TODO: Unit types
             ast::Statement::Return { expression } => {
-                let return_address = self.translate_expression(expression);
-                // TODO: Copy the data stored in the address into the proper return slot.
-                // TODO: Is Cranelift doing this for me? The code works as-is
-                self.fn_builder.ins().return_(&[return_address]);
+                let return_data_address = self.translate_expression(expression);
+                
+                let return_slot = *self.data.get_struct_return_slot();
+                let return_slot_address = self.fn_builder.ins().stack_addr(*self.pointer_type, return_slot, 0);
+
+                // Copy the data stored in the address into the proper return slot.
+                let size = self.validation_context.types.size_of(expression.get_type()) as i64;
+                let size_value = self.fn_builder.ins().iconst(*self.pointer_type, size);
+                
+                self.fn_builder.call_memcpy(self.module.target_config(), return_slot_address, return_data_address, size_value);
+
+                self.fn_builder.ins().return_(&[return_slot_address]);
             }
 
-            ast::Statement::Expression(_) => {
-                todo!()
+            ast::Statement::Expression(expression) => {
+                self.translate_expression(expression);
             }
         }
     }
 
     fn translate_expression(&mut self, expression: &ast::Expression) -> Value {
         match expression {
-            ast::Expression::Ident { name, ty } => {
+            ast::Expression::Ident { name, ty: _ } => {
                 let var = self.data.get_variable(name);
                 self.fn_builder.use_var(var)
             }
 
-            ast::Expression::FieldAccess { base_expr, field, ty } => {
+            ast::Expression::FieldAccess { base_expr, field, ty: _ } => {
                 let base_address = self.translate_expression(base_expr);
                 let field_offset = self.validation_context.get_field_offset(base_expr.get_type(), field).unwrap();
                 // return the address of the desired field
@@ -194,7 +209,8 @@ impl<'input> FunctionTranslator<'input> {
         if let Some(single_return) = maybe_multiple_return.get(0) {
             *single_return
         } else {
-            todo!("unit return")
+            // If nothing is returned, just give an arbitrary value
+            Value::new(0)
         }
     }
 
@@ -203,6 +219,7 @@ impl<'input> FunctionTranslator<'input> {
         // FIXME: Narrowing cast
         let size = self.validation_context.types.size_of(ty) as u32;
         let slot = self.create_explicit_stack_allocation(size);
+        let slot_address = self.fn_builder.ins().stack_addr(*self.pointer_type, slot, 0);
 
         // TODO: Is there any way to write to a given address
         //       rather than needing to copy like this?
@@ -210,15 +227,14 @@ impl<'input> FunctionTranslator<'input> {
         for (field, expression) in fields {
             // 2.1 Obtain the address containing the corresponding field's data
             let field_value_address = self.translate_expression(expression);
-            let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i32;
+            let field_offset = self.validation_context.get_field_offset(ty, field).unwrap() as i64;
+            let destination_address = self.fn_builder.ins().iadd_imm(slot_address, field_offset);
             
-            // 2.2 Copy that data's bytes into the assigned slot
-            for byte in 0..self.validation_context.types.size_of(expression.get_type()) {
-                let offset = byte as i32 + field_offset;
+            let field_size = self.validation_context.types.size_of(expression.get_type()) as i64;
+            let field_size_value = self.fn_builder.ins().iconst(*self.pointer_type, field_size);
 
-                let value = self.fn_builder.ins().load(types::I8, MemFlags::trusted(), field_value_address, byte as i32);
-                self.fn_builder.ins().stack_store(value, slot, offset as i32);
-            }
+            // 2.2 Copy that data's bytes into the assigned slot
+            self.fn_builder.call_memcpy(self.module.target_config(), destination_address, field_value_address, field_size_value);
         }
 
         // 3. Return the address of the newly instantiated object

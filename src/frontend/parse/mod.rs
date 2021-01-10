@@ -620,7 +620,8 @@ impl<'a> Parser<'a> {
         Node::new(parameters, start.extend(*self.previous_span()))
     }
 
-    /// Parses a statement terminated by ';'. 
+    // TODO: This function needs a major refactor
+    /// Parses a statement terminated by ';'  
     /// Assumes implicit return for non-terminated expressions
     pub fn parse_statement(&self) -> Node<ast::Statement> {
         let statement;
@@ -696,13 +697,10 @@ impl<'a> Parser<'a> {
                 };
             }
 
-            // TODO: `.` access, function calls
+            // TODO: Support derefs here too (*a.b.c)
             // FIXME: This needs to be refactored
-            Token::Ident(ident) => {
-                // TODO: This would yield `x.a.b` of `x.a.b *= 12;`
-                // let base = self.parse_base_expression();
-
-                self.advance();
+            Token::Ident(_) => {
+                let base = self.parse_expression_field_access();
 
                 // Check whether this is an assignment statement
                 let is_assignment = match self.current_token() {
@@ -729,7 +727,7 @@ impl<'a> Parser<'a> {
 
                             statement = ast::Statement::Assign {
                                 // TODO: Replace `variable` with `expression`
-                                variable: ident,
+                                lhs: base,
                                 operator: Node::new(op, op_token.span.extend(*self.previous_span())),
                                 expression: self.parse_expression(),
                             };
@@ -739,27 +737,22 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    // TODO: This should probably be removed eventually
-                    // Found: `ident;`
+                    // Found: `expression;`
                     Token::Semicolon => {
-                        parser_error!(self.file_path, self.current_span(), "Identifier as statement does nothing");
+                        statement = ast::Statement::Expression(base);
                     }
 
                     // NOTE: Current token is not a semicolon
-                    // Found: `ident`
+                    // Return the base expression
                     _ => {
-                        // FIXME: This is a hack that shouldn't be needed (needs refactor)
-                        *self.position.borrow_mut() -= 1;
-                        let expression = self.parse_expression();
-
                         statement = if let Token::Semicolon = self.current_token() {
-                            ast::Statement::Expression(expression)
+                            ast::Statement::Expression(base)
                         } else {
                             needs_semicolon = false;
 
                             // TODO: Ensure this is correct
                             ast::Statement::ImplicitReturn {
-                                expression, //Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
+                                expression: base, //Node::new(ast::Expression::Ident(ident), start.extend(*self.previous_span())),
                                 is_function_return: false,
                             }
                         };

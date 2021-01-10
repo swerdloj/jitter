@@ -325,7 +325,7 @@ impl<'input> Context<'input> {
             }
 
             // TODO: aliasing/reducing
-            ast::Statement::Assign { variable, operator, expression } => {
+            ast::Statement::Assign { lhs, operator, expression } => {
                 // Desugar op-assignments
                 if operator.item != ast::AssignmentOp::Assign {
                     let new_op = match operator.item {
@@ -338,40 +338,42 @@ impl<'input> Context<'input> {
 
                     operator.item = ast::AssignmentOp::Assign;
 
-                    // TODO: Try to make this work so no clone is needed
-                    // *expression = ast::Node::new(
-                    //     ast::Expression::BinaryExpression {
-                    //         lhs: Box::new(ast::Node::new(ast::Expression::Ident {
-                    //             name: variable,
-                    //             ty: Type::Unknown,
-                    //         }, expression.span)),
-                    //         op: ast::Node::new(new_op, operator.span),
-                    //         rhs: Box::new(*expression),
-                    //         ty: Type::Unknown,
-                    //     }, expression.span
-                    // );
-
+                    // TODO: Do this without clones
                     expression.item = ast::Expression::BinaryExpression {
-                        lhs: Box::new(ast::Node::new(ast::Expression::Ident {
-                            name: variable,
-                            ty: Type::Unknown,
-                        }, expression.span)),
+                        lhs: Box::new(lhs.clone()),
                         op: ast::Node::new(new_op, operator.span),
                         rhs: Box::new(expression.clone()),
                         ty: Type::Unknown,
                     };
                 }
 
-                let var_data = self.scopes.get_variable_mut(variable)?;
-                if !var_data.mutable {
-                    return Err(format!("Cannot assign to immutable variable `{}`", variable));
-                }
+                let destination_type = self.validate_expression(lhs)?;
+                let assigned_type = self.validate_expression(expression)?;
 
-                if let Some(ident) = Self::reduce_expression_to_alias(expression) {
-                    var_data.memory_usage = MemoryUsage::Alias(ident);
+                match &lhs.item {
+                    ast::Expression::FieldAccess { base_expr, field, ty } => {
+                        // TODO: Assert that the root of base_expr is mutable
+                    }
+
+                    ast::Expression::Ident { name, ty } => {
+                        let var_data = self.scopes.get_variable_mut(name)?;
+                        if !var_data.mutable {
+                            return Err(format!("Cannot assign to immutable variable `{}`", name));
+                        }
+                        if let Some(ident) = Self::reduce_expression_to_alias(expression) {
+                            var_data.memory_usage = MemoryUsage::Alias(ident);
+                        }
+                    }
+
+                    ast::Expression::FunctionCall { name, inputs, ty } => {
+                        todo!("assign to function calls if `&mut` returned?");
+                    }
+                    _ => unreachable!(),
                 }
                 
-                self.validate_expression(expression)?;
+                if destination_type != assigned_type {
+                    return Err(format!("Tried assigning type `{}` to incompatible type `{}`", &destination_type, &assigned_type));
+                }
             }
 
             ast::Statement::Return { expression } => {
