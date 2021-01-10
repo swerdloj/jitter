@@ -55,9 +55,9 @@ pub struct AST<'input> {
     pub traits:    Vec<Node<Trait<'input>>>,
     pub impls:     Vec<Node<Impl<'input>>>,
     pub structs:   Vec<Node<Struct<'input>>>,
+    pub uses:      Vec<Node<Use<'input>>>,
      // TODO: These
     // pub constants: Vec<Node<()>>,
-    // pub uses: Vec<Node<()>>,
 }
 
 impl<'input> AST<'input> {
@@ -68,6 +68,7 @@ impl<'input> AST<'input> {
             traits:    Vec::new(),
             impls:     Vec::new(),
             structs:   Vec::new(),
+            uses:      Vec::new(),
         }
     }
 
@@ -79,6 +80,7 @@ impl<'input> AST<'input> {
             traits:    Vec::with_capacity(0),
             impls:     Vec::with_capacity(0),
             structs:   Vec::with_capacity(0),
+            uses:      Vec::with_capacity(0),
         }
     }
 
@@ -92,8 +94,8 @@ impl<'input> AST<'input> {
             TopLevel::Trait(i) => self.traits.push(i),
             TopLevel::Impl(i) => self.impls.push(i),
             TopLevel::Struct(i) => self.structs.push(i),
+            TopLevel::Use(i) => self.uses.push(i),
             // TopLevel::ConstDeclaration => self.constants.(i),
-            // TopLevel::UseStatement => self.uses.push(i),
             _ => todo!(),
         }
     }
@@ -106,8 +108,14 @@ pub enum TopLevel<'input> {
     Trait(Node<Trait<'input>>),
     Impl(Node<Impl<'input>>),
     Struct(Node<Struct<'input>>),
+    Use(Node<Use<'input>>),
     ConstDeclaration,
-    UseStatement,
+}
+
+#[derive(Debug)]
+pub struct Use<'input> {
+    // a::b::c becomes [a, b, c]
+    pub path: Vec<&'input str>,
 }
 
 pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
@@ -116,6 +124,7 @@ pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
 pub struct Function<'input> {
     pub prototype: Node<FunctionPrototype<'input>>,
     pub body: Node<BlockExpression<'input>>,
+    pub is_public: bool,
 }
 
 #[derive(Debug)]
@@ -123,6 +132,7 @@ pub struct Trait<'input> {
     pub name: &'input str,
     pub default_functions: Vec<Node<Function<'input>>>,
     pub required_functions: Vec<Node<FunctionPrototype<'input>>>,
+    pub is_public: bool,
     // TODO: Constants, associated types, etc.
 }
 
@@ -145,14 +155,16 @@ pub struct FunctionPrototype<'input> {
 pub struct Struct<'input> {
     pub name: &'input str,
     pub fields: Node<StructFieldList<'input>>,
+    pub is_public: bool,
 }
 
 pub type StructFieldList<'input> = Vec<Node<StructField<'input>>>;
 
 #[derive(Debug)]
 pub struct StructField<'input> {
-    pub field_name: &'input str,
-    pub field_type: Type<'input>,
+    pub name: &'input str,
+    pub ty: Type<'input>,
+    pub is_public: bool,
 }
 
 pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;

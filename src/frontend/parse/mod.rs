@@ -91,8 +91,6 @@ impl<'a> Parser<'a> {
 
     ///////////// Parse Functions /////////////
 
-    // TODO: Might want AST to be a type where each TopLevel
-    //       is a field containing lists of those items
     pub fn parse_ast(&self) -> ast::AST {
         let mut ast = ast::AST::new();
 
@@ -105,25 +103,49 @@ impl<'a> Parser<'a> {
 
     // TopLevel items are all nodes by themselves
     pub fn parse_top_level(&self) -> ast::TopLevel {
+        let fail_if_public = |public: bool| {
+            if public {parser_error!(self.file_path, self.current_span(), "Unexpected `pub` keyword");}
+        };
+
+        let is_public = if let Token::Keyword(Keyword::Pub) = self.current_token() {
+            true    
+        } else {false};
+
         match self.current_token() {
             Token::Keyword(keyword) => {
                 match keyword {
                     Keyword::Extern => {
+                        fail_if_public(is_public);
                         self.advance();
+                        
                         ast::TopLevel::ExternBlock(
                             self.parse_extern_block()
                         )
                     }
-
+                    
                     Keyword::Use => {
-                        todo!("modules")
+                        fail_if_public(is_public);
+                        self.advance();
+                        
+                        ast::TopLevel::Use(
+                            self.parse_use()
+                        )
                     }
+                    
+                    Keyword::Impl => {
+                        fail_if_public(is_public);
+                        self.advance();
 
+                        ast::TopLevel::Impl(
+                            self.parse_impl()
+                        )
+                    }
+                    
                     Keyword::Fn => {
                         self.advance();
 
                         ast::TopLevel::Function(
-                            self.parse_function_definition()
+                            self.parse_function_definition(is_public)
                         )
                     }
 
@@ -131,15 +153,7 @@ impl<'a> Parser<'a> {
                         self.advance();
 
                         ast::TopLevel::Trait(
-                            self.parse_trait_definition()
-                        )
-                    }
-
-                    Keyword::Impl => {
-                        self.advance();
-
-                        ast::TopLevel::Impl(
-                            self.parse_impl()
+                            self.parse_trait_definition(is_public)
                         )
                     }
 
@@ -147,7 +161,7 @@ impl<'a> Parser<'a> {
                         self.advance();
 
                         ast::TopLevel::Struct(
-                            self.parse_struct_definition()
+                            self.parse_struct_definition(is_public)
                         )
                     }
 
@@ -162,6 +176,44 @@ impl<'a> Parser<'a> {
                 parser_error!(self.file_path, self.current_span(), "Expected a TODO:. Found unexpected token `{}`", self.current_token());
             }
         }
+    }
+
+    // TODO: Handle multiple imports: `a::b::{b1, b2, b3};`
+    //       and everything imports:  `a::b::*;`
+    pub fn parse_use(&self) -> Node<ast::Use> {
+        let start = self.previous_span();
+        let mut path = Vec::new();
+
+        loop {
+            // ..a
+            if let Token::Ident(ident) = self.current_token() {
+                self.advance();
+                path.push(*ident);
+            }
+            // ..a:
+            if let Token::Colon = self.current_token() {
+                self.advance();
+                // ..a::
+                if let Token::Colon = self.current_token() {
+                    self.advance();
+                    continue;
+                } else {
+                    parser_error!(self.file_path, self.current_span(), "Expected `::` in module path. Found `:{}`", self.current_token());
+                }
+            // ..a;
+            } else if let Token::Semicolon = self.current_token() {
+                self.advance();
+                break;
+            } else {
+                parser_error!(self.file_path, self.current_span(), "Expected `:` or `;` in module path. Found `{}`", self.current_token());
+            }
+        }
+
+        let use_ = ast::Use {
+            path,
+        };
+
+        Node::new(use_, start.extend(*self.previous_span()))
     }
 
     pub fn parse_extern_block(&self) -> Node<ast::ExternBlock> {
@@ -266,7 +318,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_trait_definition(&self) -> Node<ast::Trait> {
+    pub fn parse_trait_definition(&self, is_public: bool) -> Node<ast::Trait> {
         // span of `trait` keyword
         let start = self.previous_span();
 
@@ -295,6 +347,9 @@ impl<'a> Parser<'a> {
                                 let function = ast::Function {
                                     prototype,
                                     body,
+                                    // TODO: Is this correct? Trait functions
+                                    //       are always public?
+                                    is_public: true,
                                 };
                                 default_functions.push(Node::new(function, fn_start.extend(*self.previous_span())));
                             }
@@ -315,6 +370,7 @@ impl<'a> Parser<'a> {
                     name,
                     default_functions,
                     required_functions,
+                    is_public,
                 };
 
                 Node::new(trait_, start.extend(*self.previous_span()))
@@ -333,6 +389,25 @@ impl<'a> Parser<'a> {
         // span of `impl` keyword
         let start = self.previous_span();
 
+        // TODO: Constants, etc.
+        let parse_impl_items = || {
+            let mut functions = Vec::new();
+            loop {
+                let is_public = if let Token::Keyword(Keyword::Pub) = self.current_token() {
+                    self.advance();
+                    true
+                } else {false};
+
+                if let Token::Keyword(Keyword::Fn) = self.current_token() {
+                    self.advance();
+                    functions.push(self.parse_function_definition(is_public));
+                } else {
+                    break;
+                }
+            }
+            functions
+        };
+
         // TODO: Create a `parse_impl_body` to simplify this
         // FIXME: Copy/pasted sections
         if let Token::Ident(name1) = self.current_token() {
@@ -350,12 +425,7 @@ impl<'a> Parser<'a> {
                         if let Token::OpenCurlyBrace = self.current_token() {
                             self.advance();
 
-                            let mut functions = Vec::new();
-                            // TODO: Constants, etc.
-                            while let Token::Keyword(Keyword::Fn) = self.current_token() {
-                                self.advance();
-                                functions.push(self.parse_function_definition());
-                            }
+                            let functions = parse_impl_items();
 
                             if let Token::CloseCurlyBrace = self.current_token() {
                                 self.advance();
@@ -383,13 +453,8 @@ impl<'a> Parser<'a> {
                 // FIXME: This body is duplicated above
                 Token::OpenCurlyBrace => {
                     self.advance();
-
-                    let mut functions = Vec::new();
-                    // TODO: Constants, etc.
-                    while let Token::Keyword(Keyword::Fn) = self.current_token() {
-                        self.advance();
-                        functions.push(self.parse_function_definition());
-                    }
+                   
+                    let functions = parse_impl_items();
 
                     if let Token::CloseCurlyBrace = self.current_token() {
                         self.advance();
@@ -418,7 +483,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Do I want tuple structs and/or unit structs?
     // struct ident {field1: type1, ..}
-    pub fn parse_struct_definition(&self) -> Node<ast::Struct> {
+    pub fn parse_struct_definition(&self, is_public: bool) -> Node<ast::Struct> {
         // span of `struct` keyword
         let start = self.previous_span();
 
@@ -430,6 +495,7 @@ impl<'a> Parser<'a> {
                 let item = ast::Struct {
                     name,
                     fields,
+                    is_public,
                 };
 
                 Node::new(item, start.extend(*self.previous_span()))
@@ -454,14 +520,20 @@ impl<'a> Parser<'a> {
                 parser_error!(self.file_path, self.current_span(), "Only one trailing comma is allowed after struct fields");
             }
 
-            if let Token::Ident(field_name) = self.current_token() {
+            let is_public = if let Token::Keyword(Keyword::Pub) = self.current_token() {
+                self.advance();
+                true
+            } else {false};
+
+            if let Token::Ident(name) = self.current_token() {
                 self.advance();
                 if let Token::Colon = self.current_token() {
                     self.advance();
 
                     let field = ast::StructField {
-                        field_name,
-                        field_type: self.parse_type(),
+                        name,
+                        ty: self.parse_type(),
+                        is_public,
                     };
 
                     fields.push(
@@ -492,7 +564,7 @@ impl<'a> Parser<'a> {
     }
 
     // fn ident(param: type, ..) -> return_type { statements.. }
-    pub fn parse_function_definition(&self) -> Node<ast::Function> {
+    pub fn parse_function_definition(&self, is_public: bool) -> Node<ast::Function> {
         // span of `fn` keyword
         let start = self.previous_span();
 
@@ -502,6 +574,7 @@ impl<'a> Parser<'a> {
         let function = ast::Function {
             prototype,
             body,
+            is_public,
         };
 
         Node::new(function, start.extend(*self.previous_span()))

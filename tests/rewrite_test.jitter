@@ -1,6 +1,8 @@
+use libtest::pub_test;
+
 struct JitterStruct {
-    a: u32,
-    b: i32,
+    pub a: u32,
+    pub b: i32,
 }
 
 extern {

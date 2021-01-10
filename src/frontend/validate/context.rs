@@ -115,7 +115,7 @@ impl<'input> Context<'input> {
         
         // Determine the struct's overall alignment
         let alignment = struct_.fields.iter().fold(0, |alignment, x| {
-            std::cmp::max(alignment, self.types.alignment_of(&x.field_type))
+            std::cmp::max(alignment, self.types.alignment_of(&x.ty))
         });
 
         let mut fields = HashMap::new();
@@ -124,16 +124,20 @@ impl<'input> Context<'input> {
         // Determine each field's aligned offset
         for field in &struct_.fields.item {
             // Account for any needed padding
-            let field_alignment = self.types.alignment_of(&field.field_type);
+            let field_alignment = self.types.alignment_of(&field.ty);
             // FIXME: Narrowing cast
             offset += needed_padding(offset, field_alignment as i32);
             
             // Place field at current offset
-            fields.insert(field.field_name, (field.field_type.clone(), offset));
+            fields.insert(field.name, StructField {
+                ty: field.ty.clone(),
+                offset,
+                is_public: field.is_public,
+            });
             
             // Account for the size of the field
             // FIXME: Narrowing cast
-            offset += self.types.size_of(&field.field_type) as i32;
+            offset += self.types.size_of(&field.ty) as i32;
         }
         
         self.structs.insert(
@@ -172,7 +176,7 @@ impl<'input> Context<'input> {
                     .ok_or(format!("Type `{}` does not exist", ty))
                     .map(|struct_def| {
                         struct_def.fields.get(field)
-                            .map(|(field_type, _size)| field_type.clone())
+                            .map(|field| field.ty.clone())
                     })
                     .transpose()
                     .unwrap_or(Err(format!("Type `{}` has no field `{}`", ty, field)))
@@ -192,10 +196,35 @@ impl<'input> Context<'input> {
 
             Type::User(ident) => {
                 // TODO: Errors?
-                Ok(self.structs.get(ident).unwrap().fields.get(field).unwrap().1)
+                Ok(self.structs.get(ident).unwrap().fields.get(field).unwrap().offset)
             }
 
             _ => Err(format!("Tried getting field offset of incompatible type `{}`", ty)),
+        }
+    }
+
+    pub fn is_field_public(&self, ty: &Type<'input>, field: &'input str) -> Result<bool, String> {        
+        match ty {
+            // Recursively strip away type wrappers
+            Type::Reference { ty: underlying, .. } => {
+                self.is_field_public(underlying, field)
+            }
+
+            Type::Tuple(types) => todo!(),
+            
+            Type::User(name) => {
+                let struct_ = self.structs.get(name).ok_or(
+                    format!("No such type: `{}`", name)
+                )?;
+
+                let field = struct_.fields.get(field)
+                    .ok_or(format!("Type `{}` has no field `{}`", ty, field))?;
+
+                Ok(field.is_public)
+            }
+
+            // TODO: Is this correct?
+            _ => unreachable!(), //Err(format!("Type `{}` has no field `{}`", actual_type, field))
         }
     }
 
@@ -496,8 +525,9 @@ impl<'input> Context<'input> {
                 // Check each assigned field/value with the expected fields/values
                 for (field_name, expr) in fields {
                     // FIXME: Another (not terrible) hack to satisfy borrows
-                    let (field_type, _) = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name)
-                        .ok_or(format!("Type `{}` has no field `{}`", ty, field_name))?.clone();
+                    let field_type = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name)
+                        .ok_or(format!("Type `{}` has no field `{}`", ty, field_name))?
+                        .ty.clone();
                     
                     // Required field is accounted for
                     required_fields.remove(field_name);
@@ -527,6 +557,10 @@ impl<'input> Context<'input> {
             // TODO: This needs to be modified later to also support enums and tuples
             ast::Expression::FieldAccess { base_expr, field, ty } => {
                 let base_type = self.validate_expression(base_expr)?;
+                
+                if !self.is_field_public(&base_type, field)? {
+                    return Err(format!("Field `{}` of `{}` is private", field, base_type));
+                }
                 
                 let field_type = self.get_field_type(&base_type, field)?;
                 *ty = field_type.clone();

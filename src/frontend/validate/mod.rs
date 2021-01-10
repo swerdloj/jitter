@@ -14,8 +14,15 @@ use crate::frontend::parse::ast;
 /// Stores struct definitions
 struct StructDefinition<'input> {
     /// Map of field_name -> (type, byte offset)
-    fields: HashMap<&'input str, (Type<'input>, i32)>,
+    fields: HashMap<&'input str, StructField<'input>>,
 }
+
+pub struct StructField<'input> {
+    pub ty: Type<'input>,
+    pub offset: i32,
+    pub is_public: bool,
+}
+
 
 pub struct TypeTableEntry {
     /// Size of type in bytes
