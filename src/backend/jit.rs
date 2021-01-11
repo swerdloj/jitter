@@ -57,21 +57,36 @@ impl<'a> JitterContextBuilder<'a> {
     // pub fn add_source_path...
 
     // TODO: Return Result
-    pub fn build(self) -> JitterContext {
+    pub fn build(self) -> Result<JitterContext, String> {
         let mut jit_context = JitterContext::new(self.simple_jit_builder);
         
         if self.source_path != "" {
+            // Lex
             let input = &std::fs::read_to_string(self.source_path).expect("Read input");
             let tokens = crate::frontend::lex::Lexer::lex_str(self.source_path, input, true);
+            // Parse
             let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
-            let ast = parser.parse_ast();
-            let mut validation_context = crate::frontend::validate::context::Context::new();
-            validation_context.validate(ast).expect("AST Validation");
+            let ast = parser.parse_ast("root");
 
-            jit_context.translate(validation_context).expect("JIT-compile");
+            // TODO: 1. Go through AST's `use`s
+            for use_ in &ast.uses {
+                // let module_path = locate_module(use_);
+            }
+
+            //       2. Repeat the above steps for that file
+            //       3. Create map of ((module, symbol) -> mangled symbol)
+            //       4. Coalesce ASTs
+            //       5. Validate everything and codgen in one unit
+
+
+            // Analyze
+            let mut validation_context = crate::frontend::validate::context::Context::new();
+            validation_context.validate(ast)?;
+            // Codegen
+            jit_context.translate(validation_context)?;
         }
 
-        jit_context
+        Ok(jit_context)
     }
 }
 
@@ -96,7 +111,7 @@ pub struct JitterContext {
 impl Default for JitterContext {
     #[inline(always)]
     fn default() -> Self {
-        JitterContextBuilder::new().build()
+        JitterContextBuilder::new().build().unwrap()
     }
 }
 
@@ -105,17 +120,14 @@ impl JitterContext {
         let module = SimpleJITModule::new(builder);
 
         let pointer_type = module.target_config().pointer_type();
-        crate::log!("Pointer type is: {}\n", pointer_type);
+        // crate::log!("Pointer type is: {}\n", pointer_type);
 
         Self {
             fn_builder_context: FunctionBuilderContext::new(),
             fn_context: module.make_context(),
             data_context: DataContext::new(),
             module,
-
-            // TEMP: Might want to keep this or make it optional depending on usage
             functions: HashMap::new(),
-
             pointer_type,
         }
     }

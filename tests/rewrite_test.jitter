@@ -60,18 +60,7 @@ fn ret_u32() -> u32 {
     77_u32
 }
 
-// Works when literals are passed to `struct_return`
-// Doesn't work when using function calls
+// Works, but requires hack (move the nested function return value into local stack slot)
 fn function_call2() -> JitterStruct {
-    // let a = ret_u32();
-    // let b = 12_i32;
-    // let b = test();
-
-    // print_u32(ret_u32());
-    // print_i32(test());
-    
-    // struct_return(a, b);
-
-    // Goal: Make this work
     struct_return(ret_u32(), test())
 }

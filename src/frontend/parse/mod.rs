@@ -91,8 +91,8 @@ impl<'a> Parser<'a> {
 
     ///////////// Parse Functions /////////////
 
-    pub fn parse_ast(&self) -> ast::AST {
-        let mut ast = ast::AST::new();
+    pub fn parse_ast(&self, module: &'a str) -> ast::AST {
+        let mut ast = ast::AST::new(module);
 
         while self.is_anything_unparsed() {
             ast.insert_top_level(self.parse_top_level());

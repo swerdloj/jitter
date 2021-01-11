@@ -7,7 +7,7 @@ pub struct Node<NodeType> {
     pub item: NodeType,
     pub span: crate::Span,
     // TODO: This flag might not be needed (just knowing at least one error exists is enough)
-    pub is_error_recovery_node: bool,
+    // pub is_error_recovery_node: bool,
 }
 
 // Removes the need to add `.item` everywhere
@@ -29,14 +29,14 @@ impl<T> Node<T> {
         Self {
             item,
             span,
-            is_error_recovery_node: false,
+            // is_error_recovery_node: false,
         }
     }
 
-    pub fn poison(mut self) -> Self {
-        self.is_error_recovery_node = true;
-        self
-    }
+    // pub fn poison(mut self) -> Self {
+    //     self.is_error_recovery_node = true;
+    //     self
+    // }
 }
 
 ///////////////// AST VARIANTS /////////////////
@@ -50,6 +50,7 @@ impl<T> Node<T> {
 // TODO: Might want to make these HashMaps instead of Vecs
 //       for convenience
 pub struct AST<'input> {
+    pub module:    &'input str,
     pub externs:   Vec<Node<ExternBlock<'input>>>,
     pub functions: Vec<Node<Function<'input>>>,
     pub traits:    Vec<Node<Trait<'input>>>,
@@ -61,8 +62,9 @@ pub struct AST<'input> {
 }
 
 impl<'input> AST<'input> {
-    pub fn new() -> Self {
+    pub fn new(module: &'input str) -> Self {
         Self {
+            module,
             externs:   Vec::new(),
             functions: Vec::new(),
             traits:    Vec::new(),
@@ -75,6 +77,7 @@ impl<'input> AST<'input> {
     /// Create a placeholder AST with no heap allocations
     pub(crate) fn placeholder() -> Self {
         Self {
+            module:    "",
             externs:   Vec::with_capacity(0),
             functions: Vec::with_capacity(0),
             traits:    Vec::with_capacity(0),

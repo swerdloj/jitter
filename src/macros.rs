@@ -42,7 +42,7 @@ macro_rules! Jitter {
             )+
         )?
 
-        .build()
+        .build().unwrap()
     };
 }
 

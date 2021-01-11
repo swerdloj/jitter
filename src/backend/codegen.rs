@@ -206,8 +206,18 @@ impl<'input> FunctionTranslator<'input> {
         let maybe_multiple_return = self.fn_builder.inst_results(call);
 
         // Either one value is returned or none
-        if let Some(single_return) = maybe_multiple_return.get(0) {
-            *single_return
+        if let Some(return_address) = maybe_multiple_return.get(0).map(|v| *v) {
+            // FIXME: Copy shouldn't be needed, but I don't know what else is wrong
+            //        that causes function calls as arguments to other functions
+            //        resulting in garbage being passed instead.
+            //
+            //        Should simply be able to pass along the returned address (`return_address` in this case)
+            let size = self.validation_context.types.size_of(ty) as u32;
+            let size_value = self.fn_builder.ins().iconst(*self.pointer_type, size as i64);
+            let slot = self.create_explicit_stack_allocation(size);
+            let slot_address = self.fn_builder.ins().stack_addr(*self.pointer_type, slot, 0);
+            self.fn_builder.call_memcpy(self.module.target_config(), slot_address, return_address, size_value);
+            slot_address
         } else {
             // If nothing is returned, just give an arbitrary value
             Value::new(0)
