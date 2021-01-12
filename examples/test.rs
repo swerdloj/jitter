@@ -21,12 +21,12 @@ fn hello_from_rust(number: &i32) {
     println!("\nHello from Rust! -- {}\n", number);
 }
 
-fn print_i32(n: Return<i32>) {
-    println!("i32: {}", n.into());
+fn print_i32(n: &i32) {
+    println!("i32: {}", n);
 }
 
-fn print_u32(n: Return<u32>) {
-    println!("u32: {}", n.into());
+fn print_u32(n: &u32) {
+    println!("u32: {}", n);
 }
 
 #[derive(Debug)]
@@ -74,7 +74,7 @@ fn main() {
     println!("params(7, 123) = {}", params(&7, &123).into());
     println!("structs(100, -70) = {}", structs(&100, &-70).into());
     println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
-    println!("function_call1() = {:?}", function_call1().into());
+    println!("function_call1() = {}", function_call1().into());
     println!("function_call2() = {:?}", function_call2().into());
 }
 
@@ -89,8 +89,9 @@ fn main2() {
 
     // let mut jit = JitterContextBuilder::new()
     //     .with_source_path("./tests/integration_test.jitter")
-    //     .with_function(jitter::FFI!(hello_from_rust))
-    //     .build();
+    //     .with_function("hello_from_rust", hello_from_rust as _)
+    //     .build()
+    //     .unwrap();
 
     // TEMP: for testing -- eventually replace with #[jitter::link] usage above
     let negate: fn(i32) -> i32 = unsafe { 

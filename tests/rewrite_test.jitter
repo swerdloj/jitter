@@ -1,16 +1,20 @@
+// Goal: Make this work
 use libtest::pub_test;
 
+// Works
 struct JitterStruct {
-    pub a: u32,
+    a: u32,
     pub b: i32,
 }
 
+// Works
 extern {
     fn print_i32(n: i32);
     fn print_u32(n: u32);
     fn hello_from_rust(n: u32);
 }
 
+// Works
 fn FFI(a: u32) {
     hello_from_rust(a);
 }
@@ -56,6 +60,7 @@ fn function_call1() -> i32 {
     test()
 }
 
+// Works
 fn ret_u32() -> u32 {
     77_u32
 }

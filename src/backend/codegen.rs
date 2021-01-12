@@ -15,12 +15,14 @@ use cranelift::codegen::ir::StackSlot;
 
 /// Translates a function and its contents into Cranelift IR
 pub struct FunctionTranslator<'input> {
-    pub pointer_type: &'input Type,
-    pub fn_builder: FunctionBuilder<'input>,
-    pub module: &'input mut cranelift_simplejit::SimpleJITModule,
+    pointer_type: &'input Type,
+    fn_builder: FunctionBuilder<'input>,
+    module: &'input mut cranelift_simplejit::SimpleJITModule,
     // Maps variable names to memory locations
-    pub data: super::MemoryMap,
-    pub validation_context: &'input ValidationContext<'input>,
+    data: super::MemoryMap,
+    validation_context: &'input ValidationContext<'input>,
+    // Map of already declared functions to their references
+    declared_functions: std::collections::HashMap<cranelift_module::FuncId, cranelift::codegen::ir::entities::FuncRef>,
 }
 
 impl<'input> FunctionTranslator<'input> {
@@ -31,6 +33,7 @@ impl<'input> FunctionTranslator<'input> {
             module,
             data: super::MemoryMap::new(),
             validation_context,
+            declared_functions: std::collections::HashMap::new(),
         }
     }
 
@@ -188,10 +191,15 @@ impl<'input> FunctionTranslator<'input> {
             unreachable!()
         };
         
-        // FIXME: This only needs to be inserted once per function
-        //        If a function calls another function more than once, this will be inserted
-        //        again for each call
-        let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
+        // If a function has already been declared, don't declare it again
+        // If it is new, save the reference for future use
+        let func_ref = if !self.declared_functions.contains_key(&func_id) {
+            let func_ref = self.module.declare_func_in_func(func_id, &mut self.fn_builder.func);
+            self.declared_functions.insert(func_id, func_ref);
+            func_ref
+        } else {
+            *self.declared_functions.get(&func_id).unwrap()
+        };
 
         let mut passed_params = Vec::new();
         for input in inputs {
@@ -219,7 +227,8 @@ impl<'input> FunctionTranslator<'input> {
             self.fn_builder.call_memcpy(self.module.target_config(), slot_address, return_address, size_value);
             slot_address
         } else {
-            // If nothing is returned, just give an arbitrary value
+            // If nothing is returned, just return an arbitrary value.
+            // Assignments to unit types will ignore this anyway.
             Value::new(0)
         }
     }
