@@ -50,11 +50,10 @@ mod tests {
 
         // Create parser and parse AST
         let parser = jitter::frontend::parse::Parser::new(path, tokens);
-        let ast = parser.parse_ast("benchmark");
+        let ast = parser.parse_ast("");
 
         total_time += parse.end();
-        // log!("AST:\n{:#?}", ast);
-
+        
 
         let validate = time("validate");
 

@@ -1,10 +1,9 @@
 pub mod ast;
 
-pub(self) use super::lex; // for convenience
 
 use crate::Span;
 use ast::{Literal, Node};
-use lex::{Token, SpannedToken, Keyword};
+use super::lex::{self, Token, SpannedToken, Keyword};
 use crate::frontend::validate::types::Type;
 
 // TODO: Return Results from everything.
@@ -773,6 +772,7 @@ impl<'a> Parser<'a> {
             // TODO: Support derefs here too (*a.b.c)
             // FIXME: This needs to be refactored
             Token::Ident(_) => {
+                // FIXME: This doesn't allow `x + 1` because `x` will be used alone here
                 let base = self.parse_expression_field_access();
 
                 // Check whether this is an assignment statement

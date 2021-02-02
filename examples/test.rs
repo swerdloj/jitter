@@ -69,61 +69,64 @@ fn main() {
         jitter::function_call2 as fn() -> JitterStruct
     };
 
-    ffi(&9);
-    println!("test() = {}", test().into());
-    println!("params(7, 123) = {}", params(&7, &123).into());
-    println!("structs(100, -70) = {}", structs(&100, &-70).into());
-    println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
-    println!("function_call1() = {}", function_call1().into());
-    println!("function_call2() = {:?}", function_call2().into());
+    // ffi(&9);
+    // println!("test() = {}", test().into());
+    // println!("params(7, 123) = {}", params(&7, &123).into());
+    // println!("structs(100, -70) = {}", structs(&100, &-70).into());
+    // println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
+    // println!("function_call1() = {}", function_call1().into());
+    // println!("function_call2() = {:?}", function_call2().into());
 }
 
-fn main2() {
+
+/*
+fn main() {
     // TODO: growable environment (REPL-style) / hot-reloading
     
     let mut jitter = Jitter! {
         ["./tests/integration_test.jitter"] <- [hello_from_rust]
     };
-
+    
     // The above is equivalent to this:
-
+    
     // let mut jit = JitterContextBuilder::new()
     //     .with_source_path("./tests/integration_test.jitter")
     //     .with_function("hello_from_rust", hello_from_rust as _)
     //     .build()
     //     .unwrap();
-
+    
     // TEMP: for testing -- eventually replace with #[jitter::link] usage above
     let negate: fn(i32) -> i32 = unsafe { 
         std::mem::transmute(jitter.get_fn("negate")) 
     };
-
+    
     let multiply: fn(i32, i32) -> i32 = unsafe { 
         std::mem::transmute(jitter.get_fn("multiply")) 
     };
-
+    
     let struct_test: fn(u8, u16, u16) -> u16 = unsafe { 
         std::mem::transmute(jitter.get_fn("struct_test")) 
     };
-
+    
     let specified_literals: fn() -> i8 = unsafe { 
         std::mem::transmute(jitter.get_fn("specified_literals")) 
     };
-
+    
     let function_calls: fn(u16) -> u16 = unsafe {
         std::mem::transmute(jitter.get_fn("function_calls"))
     };
-
+    
     // TODO: Return stack allocations
     // #[allow(non_snake_case)]
     // let FFI_test: fn(u8, u16, u16) -> JitterStruct = unsafe { 
-    //     std::mem::transmute(jitter.get_fn("FFI_test")) 
-    // };
-
-    println!("negate(1234560)      = {:?}", negate(1234560));
-    println!("multiply(12, -7)     = {:?}", multiply(12, -7));
-    println!("struct_test(1, 2, 3) = {:?}", struct_test(1, 2, 3));
-    println!("specified_literals() = {:?}", specified_literals());
-    println!("function_calls(5)    = {:?}", function_calls(5));
-    // println!("FFI_test(10, 21, 39) = {:?}", FFI_test(10, 29, 31));
+        //     std::mem::transmute(jitter.get_fn("FFI_test")) 
+        // };
+        
+        println!("negate(1234560)      = {:?}", negate(1234560));
+        println!("multiply(12, -7)     = {:?}", multiply(12, -7));
+        println!("struct_test(1, 2, 3) = {:?}", struct_test(1, 2, 3));
+        println!("specified_literals() = {:?}", specified_literals());
+        println!("function_calls(5)    = {:?}", function_calls(5));
+        // println!("FFI_test(10, 21, 39) = {:?}", FFI_test(10, 29, 31));
 }
+*/

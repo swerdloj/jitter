@@ -56,7 +56,6 @@ impl<'a> JitterContextBuilder<'a> {
     //       also allow context without source (include standard library)
     // pub fn add_source_path...
 
-    // TODO: Return Result
     pub fn build(self) -> Result<JitterContext, String> {
         let mut jit_context = JitterContext::new(self.simple_jit_builder);
         
@@ -66,11 +65,14 @@ impl<'a> JitterContextBuilder<'a> {
             let tokens = crate::frontend::lex::Lexer::lex_str(self.source_path, input, true);
             // Parse
             let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
-            let ast = parser.parse_ast("root");
+            let ast = parser.parse_ast("");
 
             // TODO: 1. Go through AST's `use`s
             for use_ in &ast.uses {
-                // let module_path = locate_module(use_);
+                use crate::frontend::modules;
+                
+                let module_path = modules::locate_module(self.source_path, &use_.path)?;
+                println!("Found module `{}` at `{:?}`", modules::display_module(&use_.path), module_path);
             }
 
             //       2. Repeat the above steps for that file

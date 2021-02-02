@@ -58,6 +58,8 @@ fn function_calls(a: i32) -> i32 {
     call_result += multiply(3_i32, 4_i32);
 
     let x: () = no_return();
+
+    // TODO: Link without using `JitterContextBuilder` (for benchark timing)
     // hello_from_rust(12_i32);
 
     call_result + a

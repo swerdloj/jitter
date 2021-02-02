@@ -39,7 +39,7 @@ impl<'input> FunctionTranslator<'input> {
 
     pub fn translate_function(&mut self, function: &ast::Function, has_return_value: bool) -> Result<(), String> {                        
         // TEMP: debug
-        crate::log!("--Generating function `{}`--", function.prototype.name);
+        // crate::log!("--Generating function `{}`--", function.prototype.name);
         
         // Create the function's entry block with appropriate function parameters
         let entry_block = self.fn_builder.create_block();
@@ -86,7 +86,7 @@ impl<'input> FunctionTranslator<'input> {
         self.fn_builder.finalize();
         
         // TEMP: debug (prints function before optimizations)
-        crate::log!("{}", self.fn_builder.display(self.module.isa()));
+        // crate::log!("{}", self.fn_builder.display(self.module.isa()));
 
         Ok(())
     }
