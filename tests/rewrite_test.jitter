@@ -1,5 +1,5 @@
 // Goal: Make this work
-use libtest::pub_test;
+use libtest::PubStruct;
 
 // Works
 struct JitterStruct {
@@ -17,6 +17,10 @@ extern {
 // Works
 fn FFI(a: u32) {
     hello_from_rust(a);
+}
+
+fn imports() {
+    let imported: PubStruct;
 }
 
 // Works

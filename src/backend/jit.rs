@@ -60,30 +60,12 @@ impl<'a> JitterContextBuilder<'a> {
         let mut jit_context = JitterContext::new(self.simple_jit_builder);
         
         if self.source_path != "" {
-            // Lex
-            let input = &std::fs::read_to_string(self.source_path).expect("Read input");
-            let tokens = crate::frontend::lex::Lexer::lex_str(self.source_path, input, true);
-            // Parse
-            let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
-            let ast = parser.parse_ast("");
-
-            // TODO: 1. Go through AST's `use`s
-            for use_ in &ast.uses {
-                use crate::frontend::modules;
-                
-                let module_path = modules::locate_module(self.source_path, &use_.path)?;
-                println!("Found module `{}` at `{:?}`", modules::display_module(&use_.path), module_path);
-            }
-
-            //       2. Repeat the above steps for that file
-            //       3. Create map of ((module, symbol) -> mangled symbol)
-            //       4. Coalesce ASTs
-            //       5. Validate everything and codgen in one unit
-
+            let source = std::fs::read_to_string(self.source_path).expect("Read source");
+            let ast = crate::parse_source(&source, self.source_path);
 
             // Analyze
             let mut validation_context = crate::frontend::validate::context::Context::new();
-            validation_context.validate(ast)?;
+            validation_context.validate(ast, String::from(""))?;
             // Codegen
             jit_context.translate(validation_context)?;
         }

@@ -13,6 +13,39 @@ use cranelift::codegen::ir::StackSlot;
 // It might be possible to reuse this module for different targets
 // such as generating standalone executables
 
+
+// TODO: How to mangle references, tuples, or anything with a symbol?
+/// Mangles function names using string lengths like so: 
+/// "__jitter_6module4path_6fnname_5param5types_6return4type"
+/// `module` is represented as "path::to::module"
+fn mangle_function_name(module: &str, prototype: &ast::FunctionPrototype) -> String {
+    let mut mangled_name = String::from("__jitter_");
+
+    // Module
+    if module.contains("::") { // "path::like::this"
+        for unit in module.split("::") {
+            mangled_name.push_str(&format!("{}{}", unit.len(), unit));
+        }
+    } else if module != "" { // "single_item_path"
+        mangled_name.push_str(&format!("{}{}", module.len(), module));
+    }
+
+    // Name
+    mangled_name.push_str(&format!("_{}{}_", prototype.name.len(), prototype.name));
+
+    // Parameters
+    for param in &prototype.parameters.item {
+        mangled_name.push_str(&format!("{}{}", param.ty.to_string().len(), param.ty))
+    }
+
+    // Return type
+    if !prototype.return_type.is_unit() {
+        mangled_name.push_str(&format!("_{}{}", prototype.name.to_string().len(), prototype.name));
+    }
+
+    mangled_name
+}
+
 /// Translates a function and its contents into Cranelift IR
 pub struct FunctionTranslator<'input> {
     pointer_type: &'input Type,

@@ -31,6 +31,17 @@ impl<T> Return<T> {
 }
 
 
+// TODO: Return Result
+/// Get unvalidated AST from source path
+pub(crate) fn parse_source<'input>(code: &'input str, code_path: &'input str) -> crate::frontend::parse::ast::AST<'input> {
+    // Lex
+    let tokens = crate::frontend::lex::Lexer::lex_str(&code_path, code, true);
+    // Parse
+    let parser = crate::frontend::parse::Parser::new(&code_path, tokens);
+    parser.parse_ast("")
+}
+
+
 // TODO: make `pub(crate)`
 /// Token/AST spans
 #[derive(Copy, Clone)]

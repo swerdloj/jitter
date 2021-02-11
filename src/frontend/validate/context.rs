@@ -5,7 +5,7 @@ use crate::frontend::parse::ast;
 use super::types::Type;
 use super::*;
 
-///////////////////// Main Validation Functionality /////////////////////
+///////////////////// Validation Functionality /////////////////////
 
 pub struct Context<'input> {
     /// Variable allocation data
@@ -18,6 +18,10 @@ pub struct Context<'input> {
     pub types: TypeTable<'input>,
     /// Scoped variable information
     scopes: Scopes<'input>,
+
+    /// Map of (module_path -> data)
+    modules: HashMap<String, Context<'input>>,
+    this_module_path: String,
 
     /// The validated AST
     pub ast: ast::AST<'input>,
@@ -37,6 +41,10 @@ impl<'input> Context<'input> {
             structs: HashMap::new(),
             types: TypeTable::new(),
             scopes: Scopes::new(),
+
+            modules: HashMap::new(),
+            this_module_path: String::new(),
+
             // Does not allocate any heap memory
             ast: ast::AST::placeholder(),
 
@@ -45,14 +53,54 @@ impl<'input> Context<'input> {
         }
     }
 
+    // `modules` is a tree. This function will raise all nested modules to the root level.
+    fn flatten_modules(&mut self) {
+        fn flatten_helper<'input>(path: String, context: Context<'input>, root: &mut HashMap<String, Context<'input>>) {
+            for (module_path, child) in context.modules {
+                flatten_helper(module_path, child, root);
+            }
+            root.insert(path, context);
+        }
+        
+        let mut flattened = HashMap::new();
+        
+        for (p, c) in self.modules {
+            flatten_helper(p, c, &mut flattened);
+            flattened.insert(p, c);
+        }
+
+        self.modules = flattened;
+    }
+
     /// Validates and takes ownership of an AST
-    pub fn validate(&mut self, mut ast: ast::AST<'input>) -> Result<(), String> {
+    pub fn validate(&mut self, mut ast: ast::AST<'input>, source_module: String) -> Result<(), String> {
         // Registration pass (gathers contextual information)    
         // NOTE: Order matters here
-        // for use_ in &ast.uses {
-            // TODO: Build symbol/alias table
-            //       Must be done first (to avoid collisions and to reference used items)
-        // }
+
+        // TODO: Build symbol/alias table
+        // TODO: Ensure that any modules are only ever parsed once
+        //       Must be done first (to avoid collisions and to reference imported symbols)
+        for use_ in &ast.uses {
+            use crate::frontend::modules;
+            
+            let module_path = modules::locate_module(source_module.clone(), &use_.path)?;
+            let module_path_string = modules::display_module(&use_.path);
+
+            // TEMP: debug
+            println!("Found module `{}` at `{:?}`", modules::display_module(&use_.path), module_path);
+
+            let source = std::fs::read_to_string(module_path).unwrap();
+            let module_ast = crate::parse_source(&source, module_path.to_str().unwrap());
+            let mut validation_context = Context::new();
+            validation_context.validate(module_ast, module_path_string.clone());
+            
+            self.modules.insert(module_path_string, validation_context);
+            // TODO: Finish this
+        }
+        self.this_module_path = source_module;
+        self.flatten_modules();
+
+
         for struct_ in &ast.structs {
             // TODO: Want to declare types, then validate them.
             //       That way, structs can reference other types declared later on
@@ -61,12 +109,13 @@ impl<'input> Context<'input> {
         for extern_block in &ast.externs {
             for prototype in &extern_block.item {
                 self.validate_function_prototype(&prototype)?;
-                self.functions.forward_declare_function(&prototype, true)?;
+                // NOTE: Functions defined within an `extern` block cannot be imported by definition
+                self.functions.forward_declare_function(&prototype, String::new(), true)?;
             }
         }
         for function in &ast.functions {
             self.validate_function_prototype(&function.prototype)?;
-            self.functions.forward_declare_function(&function.prototype, false)?;
+            self.functions.forward_declare_function(&function.prototype, self.this_module_path.clone(), false)?;
         }
         // for constant in &ast.constants {
             // TODO: Declare their typed idents in global scope
@@ -78,25 +127,12 @@ impl<'input> Context<'input> {
             // TODO: Register trait implementations
         // }
         
-
-        // Validation pass
-        // TODO:
-        // for use_ in &ast.uses {
-        // }
-        // TODO:
-        // for constant in &ast.constants {
-        // }
         for function in &mut ast.functions {
             self.current_function_name = function.prototype.name;
             self.validate_function_body(function)?;
         }
-        // TODO:
-        // for trait_ in &ast.traits {
-        // }
-        // TODO:
-        // for impl_ in &ast.impls {
-        // }
 
+        // Take ownership of the AST
         self.ast = ast;
 
         Ok(())

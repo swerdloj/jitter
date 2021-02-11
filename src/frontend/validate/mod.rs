@@ -41,7 +41,7 @@ impl TypeTableEntry {
 
 /// Stores type sizes and alignments
 pub struct TypeTable<'input> {
-    /// Map of field_name -> (size, alignment) in bytes
+    /// Map of type_name -> (size, alignment) in bytes
     data: HashMap<Type<'input>, TypeTableEntry>
 }
 
@@ -352,6 +352,8 @@ pub struct FunctionDefinition<'input> {
     pub return_type: Type<'input>,
     pub is_extern: bool,
     pub is_validated: bool,
+
+    pub use_path: String,
 }
 
 pub struct FunctionTable<'input> {
@@ -367,7 +369,7 @@ impl<'input> FunctionTable<'input> {
     }
 
     // FIXME: A few copies and clones, but nothing bad
-    fn forward_declare_function(&mut self, validated_prototype: &ast::FunctionPrototype<'input>, is_extern: bool) -> Result<(), String> {
+    fn forward_declare_function(&mut self, validated_prototype: &ast::FunctionPrototype<'input>, use_path: String, is_extern: bool) -> Result<(), String> {
         if self.functions.contains_key(validated_prototype.name) {
             return Err(format!("Function `{}` already exists", validated_prototype.name));
         }
@@ -381,6 +383,8 @@ impl<'input> FunctionTable<'input> {
             return_type: validated_prototype.return_type.clone(),
             is_extern,
             is_validated: false,
+
+            use_path,
         };
 
         self.functions.insert(validated_prototype.name, definition);
