@@ -41,8 +41,6 @@ macro_rules! Jitter {
                 .with_function(stringify!($func), $func as *const u8)
             )+
         )?
-
-        .build().unwrap()
     };
 }
 

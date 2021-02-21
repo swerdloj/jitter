@@ -14,6 +14,10 @@ pub struct PubStruct {
     private: u32,
 }
 
+pub fn imported_fn() {
+
+}
+
 pub fn pub_test() -> u32 {
     7
 }

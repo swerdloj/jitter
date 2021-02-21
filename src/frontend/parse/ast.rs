@@ -49,10 +49,12 @@ impl<T> Node<T> {
 /// see `AST.functions`
 // TODO: Might want to make these HashMaps instead of Vecs
 //       for convenience
+#[derive(Debug)]
 pub struct AST<'input> {
     pub module:    &'input str,
     pub externs:   Vec<Node<ExternBlock<'input>>>,
     pub functions: Vec<Node<Function<'input>>>,
+    pub operators: Vec<Operator<'input>>,
     pub traits:    Vec<Node<Trait<'input>>>,
     pub impls:     Vec<Node<Impl<'input>>>,
     pub structs:   Vec<Node<Struct<'input>>>,
@@ -67,6 +69,7 @@ impl<'input> AST<'input> {
             module,
             externs:   Vec::new(),
             functions: Vec::new(),
+            operators: Vec::new(),
             traits:    Vec::new(),
             impls:     Vec::new(),
             structs:   Vec::new(),
@@ -80,6 +83,7 @@ impl<'input> AST<'input> {
             module:    "",
             externs:   Vec::with_capacity(0),
             functions: Vec::with_capacity(0),
+            operators: Vec::with_capacity(0),
             traits:    Vec::with_capacity(0),
             impls:     Vec::with_capacity(0),
             structs:   Vec::with_capacity(0),
@@ -94,6 +98,10 @@ impl<'input> AST<'input> {
         match item {
             TopLevel::ExternBlock(i) => self.externs.push(i),
             TopLevel::Function(i) => self.functions.push(i),
+            TopLevel::Operator(o, f) => {
+                self.operators.push(o.item);
+                self.functions.push(f);
+            },
             TopLevel::Trait(i) => self.traits.push(i),
             TopLevel::Impl(i) => self.impls.push(i),
             TopLevel::Struct(i) => self.structs.push(i),
@@ -108,6 +116,7 @@ impl<'input> AST<'input> {
 pub enum TopLevel<'input> {
     ExternBlock(Node<ExternBlock<'input>>),
     Function(Node<Function<'input>>),
+    Operator(Node<Operator<'input>>, Node<Function<'input>>),
     Trait(Node<Trait<'input>>),
     Impl(Node<Impl<'input>>),
     Struct(Node<Struct<'input>>),
@@ -127,6 +136,14 @@ pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
 pub struct Function<'input> {
     pub prototype: Node<FunctionPrototype<'input>>,
     pub body: Node<BlockExpression<'input>>,
+    pub is_public: bool,
+}
+
+#[derive(Debug)]
+pub struct Operator<'input> {
+    pub pattern: Vec<Token<'input>>,
+    pub associated_function: String,
+    pub is_binary: bool,
     pub is_public: bool,
 }
 
@@ -210,13 +227,13 @@ pub enum Statement<'input> {
 pub enum Expression<'input> {
     BinaryExpression {
         lhs: Box<Node<Expression<'input>>>,
-        op: Node<BinaryOp>,
+        op: Node<BinaryOp<'input>>,
         rhs: Box<Node<Expression<'input>>>,
         ty: Type<'input>,
     },
 
     UnaryExpression {
-        op: Node<UnaryOp>,
+        op: Node<UnaryOp<'input>>,
         expr: Box<Node<Expression<'input>>>,
         ty: Type<'input>,
     },
@@ -245,7 +262,7 @@ pub enum Expression<'input> {
 
     FunctionCall {
         /// Name of function being called
-        name: &'input str,
+        name: String,
         /// Expressions passed as input to the function (in order)
         inputs: Vec<Node<Expression<'input>>>,
         /// Type returned by the function
@@ -299,20 +316,22 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum UnaryOp {
+pub enum UnaryOp<'input> {
     Negate,
     Not,
+    Custom(Vec<Token<'input>>),
 }
 
 #[derive(Debug, Clone)]
-pub enum BinaryOp {
+pub enum BinaryOp<'input> {
     Add,
     Subtract,
     Multiply,
     Divide,
+    Custom(Vec<Token<'input>>),
 }
 
-impl BinaryOp {
+impl<'input> BinaryOp<'input> {
     pub fn from_token(symbol_token: &SpannedToken) -> Self {
         match symbol_token.token {
             Token::Plus => BinaryOp::Add,

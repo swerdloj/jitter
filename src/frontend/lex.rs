@@ -1,8 +1,11 @@
 // TODO: 
 // Look into this: https://github.com/maciejhirsz/logos
 
-#[derive(Debug, PartialEq)]
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Keyword {
+    Binary,
     Box,
     Extern,
     Enum,
@@ -16,17 +19,24 @@ pub enum Keyword {
     Self_,
     Struct,
     Trait,
+    Unary,
     Use,
 }
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token<'input> {
     Number(usize),
     Ident(&'input str),
     Keyword(Keyword),
     
     At,                 // '@'
+
+    // DoubleQuote,        // '"'
+    DollarSign,         // '$'
+    Carrot,             // '^'
+    BackSlash,          // '\'
+    Backtick,           // '`'
 
     Minus,              // '-'
     Plus,               // '+'
@@ -65,6 +75,7 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Ident(ident) => format!("identifier: {}", ident),
             Token::Keyword(keyword) => {
                 let word = match keyword {
+                    Keyword::Binary => "binary",
                     Keyword::Box => "box",
                     Keyword::Extern => "extern",
                     Keyword::Enum => "enum",
@@ -78,11 +89,17 @@ impl<'input> std::fmt::Display for Token<'input> {
                     Keyword::Self_ => "self",
                     Keyword::Struct => "struct",
                     Keyword::Trait => "trait",
+                    Keyword::Unary => "unary",
                     Keyword::Use => "use",
                 };
                 format!("keyword: {}", word)
             },
             Token::At => "@".to_owned(),
+            Token::DollarSign => "$".to_owned(),
+            Token::Carrot => "^".to_owned(),
+            Token::BackSlash => "\\".to_owned(),
+            Token::Backtick => "`".to_owned(),
+            // Token::DoubleQuote => "\"".to_owned(),
             Token::Minus => "-".to_owned(),
             Token::Plus => "+".to_owned(),
             Token::Asterisk => "*".to_owned(),
@@ -154,6 +171,8 @@ pub struct Lexer<'input> {
     current_column: usize,
 
     strip_whitespace: bool,
+
+    custom_replacements: HashMap<Token<'input>, Vec<Token<'input>>>,
 }
 
 impl<'input> Lexer<'input> {
@@ -168,6 +187,28 @@ impl<'input> Lexer<'input> {
             current_line: 1,
             current_column: 0,
             strip_whitespace,
+
+            custom_replacements: HashMap::new(),
+        }
+    }
+
+    pub fn parse_callbacks(&mut self, callbacks: Vec<super::LexerCallback<'input>>) {
+        for cb in callbacks {
+            let mut input_lexer = Self::new("custom input", cb.string, true);
+            let mut output_lexer = Self::new("custom output", cb.replacement, true);
+
+            let input = input_lexer.lex();
+            let output = output_lexer
+                .lex()
+                .into_iter()
+                .map(|spanned| spanned.token)
+                .collect();
+
+            if input.len() != 1 {
+                panic!("Only single-token `string`s are currently supported. Found {:?}", input);
+            }
+
+            self.custom_replacements.insert(input[0].token.clone(), output);
         }
     }
 
@@ -201,7 +242,7 @@ impl<'input> Lexer<'input> {
     fn peek_next(&mut self) -> Result<char, String> {
         self.bytes.get(self.position + 1)
             .map(|byte| *byte as char)
-            .ok_or("Unexpected EOF".to_owned())
+            .ok_or(format!("Unexpected EOF: {}:{}:{}", self.file_path, self.current_line, self.current_column))
     }
 
     /// Returns true if the next character is the desired character
@@ -215,7 +256,16 @@ impl<'input> Lexer<'input> {
 
     /// Returns whether the next character is an ascii letter, number, or underscore
     fn is_next_alphanumeric(&mut self) -> Result<bool, String> {
-        let next = self.peek_next()?;
+        let next = self.peek_next();
+
+
+        // FIXME: This is a hack to avoid unexpected EOFs in custom callbacks
+        if next.is_err() {
+            return Ok(false);
+        }
+        let next = next.unwrap();
+
+
         if next.is_ascii_alphanumeric() || next == '_' {
             Ok(true)
         } else {   
@@ -236,8 +286,18 @@ impl<'input> Lexer<'input> {
                             continue;
                         }
                     }
-        
-                    tokens.push(token);
+
+                    if let Some(rule) = self.custom_replacements.get(&token.token) {
+                        let span = token.span;
+                        for t in rule {
+                            tokens.push(SpannedToken {
+                                token: t.clone(),
+                                span: span.clone(),
+                            });
+                        }
+                    } else {   
+                        tokens.push(token);
+                    }
                 }
 
                 Err(err) => {
@@ -282,6 +342,22 @@ impl<'input> Lexer<'input> {
             '@' => {
                 self.advance();
                 At
+            }
+            '`' => {
+                self.advance();
+                Backtick
+            }
+            '\\' => {
+                self.advance();
+                BackSlash
+            }
+            '^' => {
+                self.advance();
+                Carrot
+            }
+            '$' => {
+                self.advance();
+                DollarSign
             }
             '+' => {
                 self.advance();
@@ -383,8 +459,28 @@ impl<'input> Lexer<'input> {
                 // NOTE: Could just treat everything as idents, then check those for keywords,
                 //       but this is faster
                 match it {
-                    // box
                     'b' => {
+                        // binary
+                        if self.is_next('i')? {
+                            self.advance();
+                            if self.is_next('n')? {
+                                self.advance();
+                                if self.is_next('a')? {
+                                    self.advance();
+                                    if self.is_next('r')? {
+                                        self.advance();
+                                        if self.is_next('y')? {
+                                            self.advance();
+                                            if !self.is_next_alphanumeric()? {
+                                                self.advance();
+                                                token = Some(Token::Keyword(self::Keyword::Binary));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // box
                         if self.is_next('o')? {
                             self.advance();
                             if self.is_next('x')? {
@@ -593,8 +689,25 @@ impl<'input> Lexer<'input> {
                         }
                     }
 
-                    // Use
                     'u' => {
+                        // Unary
+                        if self.is_next('n')? {
+                            self.advance();
+                            if self.is_next('a')? {
+                                self.advance();
+                                if self.is_next('r')? {
+                                    self.advance();
+                                    if self.is_next('y')? {
+                                        self.advance();
+                                        if !self.is_next_alphanumeric()? {
+                                            self.advance();
+                                            token = Some(Token::Keyword(self::Keyword::Unary));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Use
                         if self.is_next('s')? {
                             self.advance();
                             if self.is_next('e')? {

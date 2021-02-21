@@ -37,9 +37,23 @@ struct JitterStruct {
 }
 
 fn main() {
-    let mut jitter = Jitter! {
+    let mut jitter_builder = Jitter! {
         ["./tests/rewrite_test.jitter"] <- [print_i32, print_u32, hello_from_rust]
     };
+
+    // Informs the lexer to replace the word "plus" with the string "+"
+    jitter_builder.with_lexer_callback(LexerCallback {
+        string: "func",
+        replacement: "fn",
+    });
+    jitter_builder.with_lexer_callback(LexerCallback {
+        string: "hello_there",
+        replacement: "hello_from_rust(123_u32);",
+    });
+
+    let jitter = jitter_builder
+        .build()
+        .expect("JIT compile");
 
     let ffi = GetFunction! {
         jitter::FFI as fn(u32)
@@ -69,6 +83,10 @@ fn main() {
         jitter::function_call2 as fn() -> JitterStruct
     };
 
+    let ops = GetFunction! {
+        jitter::custom_operators as fn()
+    };
+
     // ffi(&9);
     // println!("test() = {}", test().into());
     // println!("params(7, 123) = {}", params(&7, &123).into());
@@ -76,6 +94,7 @@ fn main() {
     // println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
     // println!("function_call1() = {}", function_call1().into());
     // println!("function_call2() = {:?}", function_call2().into());
+    ops();
 }
 
 
@@ -85,15 +104,13 @@ fn main() {
     
     let mut jitter = Jitter! {
         ["./tests/integration_test.jitter"] <- [hello_from_rust]
-    };
+    }.build().unwrap();
     
     // The above is equivalent to this:
     
     // let mut jit = JitterContextBuilder::new()
     //     .with_source_path("./tests/integration_test.jitter")
-    //     .with_function("hello_from_rust", hello_from_rust as _)
-    //     .build()
-    //     .unwrap();
+    //     .with_function("hello_from_rust", hello_from_rust as _);
     
     // TEMP: for testing -- eventually replace with #[jitter::link] usage above
     let negate: fn(i32) -> i32 = unsafe { 

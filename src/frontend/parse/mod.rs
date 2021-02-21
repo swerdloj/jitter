@@ -148,6 +148,10 @@ impl<'a> Parser<'a> {
                         )
                     }
 
+                    Keyword::Binary | Keyword::Unary => {
+                        self.parse_operator_definition(is_public)
+                    }
+
                     Keyword::Trait => {
                         self.advance();
 
@@ -692,6 +696,53 @@ impl<'a> Parser<'a> {
         Node::new(parameters, start.extend(*self.previous_span()))
     }
 
+    // FIXME: Hacky
+    // (binary | unary) symbol+ { function }
+    pub fn parse_operator_definition(&self, is_public: bool) -> ast::TopLevel {
+        let start = self.current_span();
+
+        let is_binary = if let Token::Keyword(Keyword::Binary) = self.current_token() {
+            true
+        } else {
+            false
+        };
+        self.advance();
+
+        let mut pattern = Vec::new();
+        loop {
+            if let Token::OpenCurlyBrace = self.current_token() {
+                self.advance();
+                break;
+            } else {
+                pattern.push((*self.current_token()).clone());
+                self.advance();
+            }
+        }
+
+        if let Token::Keyword(Keyword::Fn) = self.current_token() {
+            self.advance();
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected function defintion in operator definition. Found `{}`", self.current_token());
+        }
+        let function = self.parse_function_definition(true);
+        
+        
+        if *self.current_token() != Token::CloseCurlyBrace {
+            parser_error!(self.file_path, self.current_span(), "Expected `{{` to end operator definition. Found `{}`", self.current_token());
+        }
+        self.advance();
+
+        let operator = ast::Operator {
+            pattern,
+            associated_function: function.prototype.name.to_string(),
+            is_binary,
+            is_public,
+        };
+
+        let op_node = Node::new(operator, start.extend(*self.previous_span()));
+        ast::TopLevel::Operator(op_node, function)
+    }
+
     // TODO: This function needs a major refactor
     /// Parses a statement terminated by ';'  
     /// Assumes implicit return for non-terminated expressions
@@ -900,7 +951,62 @@ impl<'a> Parser<'a> {
 
     // Employs recursive descent
     fn parse_expression(&self) -> Node<ast::Expression> {
-        self.parse_expression_additive()
+        self.parse_expression_custom()
+    }
+
+    // Precedence for custom operators
+    fn parse_expression_custom(&self) -> Node<ast::Expression> {
+        let start = self.current_span();
+
+        //// Unary ////
+        match self.current_token() {
+            // TODO: Loop to allow multiple of the valid symbols
+            Token::DollarSign | Token::Carrot | Token::BackSlash | Token::Backtick => {
+                let pattern = vec![self.current_token().clone()];
+                let op = Node::new(ast::UnaryOp::Custom(pattern), *start);
+                self.advance();
+                
+                let expr = ast::Expression::UnaryExpression {
+                    op,
+                    expr: Box::new(self.parse_expression_additive()),
+                    ty: Type::Unknown,
+                };
+                return Node::new(expr, start.extend(*self.previous_span()));
+            }
+
+            _ => {}
+        }
+
+        //// Binary ////
+        let mut expression = self.parse_expression_additive();
+
+        loop {
+            let mut pattern = Vec::new();
+            let op_span = self.current_span();
+
+            match self.current_token() {
+                // TODO: Loop to allow multiple of the valid symbols
+                Token::DollarSign | Token::Carrot | Token::BackSlash | Token::Backtick => {
+                    pattern.push((*self.current_token()).clone());
+                    self.advance();
+                }
+                _ => {
+                    op_span.extend(*self.previous_span());
+                    break;
+                },
+            }
+
+            let rhs = self.parse_expression_additive();
+            let expr = ast::Expression::BinaryExpression {
+                lhs: Box::new(expression),
+                op: Node::new(ast::BinaryOp::Custom(pattern), *op_span),
+                rhs: Box::new(rhs),
+                ty: Type::Unknown,
+            };
+            expression = Node::new(expr, start.extend(*self.previous_span()));
+        }
+
+        expression
     }
 
     // Precedence for [+, -]
@@ -1095,7 +1201,7 @@ impl<'a> Parser<'a> {
                     Token::OpenParen => {
                         let inputs = self.parse_function_call_inputs();
                         expression = ast::Expression::FunctionCall {
-                            name: ident,
+                            name: ident.to_string(),
                             inputs,
                             ty: Type::Unknown,
                         };

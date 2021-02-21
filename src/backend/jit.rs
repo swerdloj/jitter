@@ -5,6 +5,7 @@
 
 use crate::frontend::parse::ast;
 use crate::frontend::validate::context::Context as ValidationContext;
+use crate::frontend::LexerCallback;
 use crate::backend::codegen::FunctionTranslator;
 
 use cranelift::prelude::*;
@@ -18,6 +19,8 @@ use std::collections::HashMap;
 pub struct JitterContextBuilder<'a> {
     simple_jit_builder: SimpleJITBuilder,
     source_path: &'a str,
+
+    lexer_callbacks: Vec<LexerCallback<'a>>,
 }
 
 // TODO: Allow optimization settings to be passed in
@@ -36,6 +39,7 @@ impl<'a> JitterContextBuilder<'a> {
         Self {
             simple_jit_builder,
             source_path: "",
+            lexer_callbacks: Vec::new(),
         }
     }
 
@@ -45,6 +49,11 @@ impl<'a> JitterContextBuilder<'a> {
     pub fn with_function(mut self, alias: &str, pointer: *const u8) -> Self {
         self.simple_jit_builder.symbol(alias, pointer);
         self
+    }
+
+    /// Defines a callback for use when either Lexing or Parsing
+    pub fn with_lexer_callback(&mut self, callback: LexerCallback<'a>) {
+        self.lexer_callbacks.push(callback);
     }
 
     pub fn with_source_path(mut self, path: &'a str) -> Self {
@@ -62,24 +71,14 @@ impl<'a> JitterContextBuilder<'a> {
         if self.source_path != "" {
             // Lex
             let input = &std::fs::read_to_string(self.source_path).expect("Read input");
-            let tokens = crate::frontend::lex::Lexer::lex_str(self.source_path, input, true);
+            let mut lexer = crate::frontend::lex::Lexer::new(self.source_path, input, true);
+            lexer.parse_callbacks(self.lexer_callbacks);
+
+            let tokens = lexer.lex();
             // Parse
             let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
             let ast = parser.parse_ast("");
-
-            // TODO: 1. Go through AST's `use`s
-            for use_ in &ast.uses {
-                use crate::frontend::modules;
-                
-                let module_path = modules::locate_module(self.source_path, &use_.path)?;
-                println!("Found module `{}` at `{:?}`", modules::display_module(&use_.path), module_path);
-            }
-
-            //       2. Repeat the above steps for that file
-            //       3. Create map of ((module, symbol) -> mangled symbol)
-            //       4. Coalesce ASTs
-            //       5. Validate everything and codgen in one unit
-
+            // println!("AST: {:#?}", ast);
 
             // Analyze
             let mut validation_context = crate::frontend::validate::context::Context::new();
@@ -135,7 +134,7 @@ impl JitterContext {
     }
 
     // TODO: Need a way to verify signature
-    pub fn get_fn(&mut self, id: &str) -> *const u8 {
+    pub fn get_fn(&self, id: &str) -> *const u8 {
         let func_id = self.functions.get(id).expect("no such function");
         self.module.get_finalized_function(*func_id)
     }

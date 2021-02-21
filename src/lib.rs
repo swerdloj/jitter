@@ -8,6 +8,7 @@ pub use proc_macros::{link, export};
 /// Includes essential types and convenience macros
 pub mod prelude {
     pub use crate::{Return, Jitter, GetFunction};
+    pub use crate::frontend::LexerCallback;
     pub use crate::backend::jit::{JitterContextBuilder, JitterContext};
 }
 

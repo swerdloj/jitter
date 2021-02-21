@@ -10,6 +10,7 @@ use super::*;
 pub struct Context<'input> {
     /// Variable allocation data
     pub allocations: AllocationTable<'input>,
+    operators: Vec<(Vec<crate::frontend::lex::Token<'input>>, String)>,
     /// Function signatures
     pub functions: FunctionTable<'input>,
     /// Struct signatures
@@ -33,6 +34,7 @@ impl<'input> Context<'input> {
     pub fn new() -> Self {
         Self {
             allocations: AllocationTable::new(),
+            operators: Vec::new(),
             functions: FunctionTable::new(),
             structs: HashMap::new(),
             types: TypeTable::new(),
@@ -64,6 +66,9 @@ impl<'input> Context<'input> {
                 self.functions.forward_declare_function(&prototype, true)?;
             }
         }
+        for operator in &ast.operators {
+            self.operators.push((operator.pattern.clone(), operator.associated_function.clone()));
+        }
         for function in &ast.functions {
             self.validate_function_prototype(&function.prototype)?;
             self.functions.forward_declare_function(&function.prototype, false)?;
@@ -78,24 +83,10 @@ impl<'input> Context<'input> {
             // TODO: Register trait implementations
         // }
         
-
-        // Validation pass
-        // TODO:
-        // for use_ in &ast.uses {
-        // }
-        // TODO:
-        // for constant in &ast.constants {
-        // }
         for function in &mut ast.functions {
             self.current_function_name = function.prototype.name;
             self.validate_function_body(function)?;
         }
-        // TODO:
-        // for trait_ in &ast.traits {
-        // }
-        // TODO:
-        // for impl_ in &ast.impls {
-        // }
 
         self.ast = ast;
 
@@ -444,7 +435,30 @@ impl<'input> Context<'input> {
                 self.types.assert_valid(&l_type)?;
                 self.types.assert_valid(&r_type)?;
 
-                match op.item {
+                match &op.item {
+                    ast::BinaryOp::Custom(custom) => {
+                        let mut new_expr = None;
+                        for pattern in &self.operators {
+                            if *custom == pattern.0 {
+                                new_expr = Some(ast::Expression::FunctionCall {
+                                    name: pattern.1.clone(),
+                                    inputs: vec![
+                                        *lhs.clone(),
+                                        *rhs.clone(),
+                                    ],
+                                    ty: self.functions.get_unchecked_function_definition(&pattern.1)?.return_type.clone(),
+                                })
+                            }
+                        }
+
+                        if let Some(expr) = new_expr {
+                            *expression = expr;
+                            self.validate_expression(expression)
+                        } else {
+                            Err(format!("Binary operator `{:?}` is not defined", custom))
+                        }
+                    }
+
                     ast::BinaryOp::Add => {
                         // Primitive numeric types can be multiplied together
                         if l_type.is_numeric() && (r_type == l_type) {
@@ -481,8 +495,30 @@ impl<'input> Context<'input> {
                 let expr_type = self.validate_expression(expr)?;
                 self.types.assert_valid(&expr_type)?;
                 
-                // TODO: this
-                match op.item {
+                match &op.item {
+                    // TODO: this
+                    ast::UnaryOp::Custom(custom) => {
+                        let mut new_expr = None;
+                        for pattern in &self.operators {
+                            if *custom == pattern.0 {
+                                new_expr = Some(ast::Expression::FunctionCall {
+                                    name: pattern.1.clone(),
+                                    inputs: vec![
+                                        *expr.clone(),
+                                    ],
+                                    ty: self.functions.get_unchecked_function_definition(&pattern.1)?.return_type.clone(),
+                                })
+                            }
+                        }
+
+                        if let Some(expr) = new_expr {
+                            *expression = expr;
+                            self.validate_expression(expression)
+                        } else {
+                            Err(format!("Unary operator `{:?}` is not defined", custom))
+                        }
+                    }
+
                     ast::UnaryOp::Negate => {
                         if expr_type.is_signed_integer() || expr_type.is_float() {
                             *ty = expr_type.clone();

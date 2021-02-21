@@ -78,6 +78,7 @@ mod tests {
             Token::Ident("_1test"),
             Token::Ident("test1_"),
             // Keywords
+            Token::Keyword(Keyword::Binary),
             Token::Keyword(Keyword::Box),
             Token::Keyword(Keyword::Extern),
             Token::Keyword(Keyword::Enum),
@@ -91,9 +92,14 @@ mod tests {
             Token::Keyword(Keyword::Self_),
             Token::Keyword(Keyword::Struct),
             Token::Keyword(Keyword::Trait),
+            Token::Keyword(Keyword::Unary),
             Token::Keyword(Keyword::Use),
             // Symbols
             Token::At,
+            Token::BackSlash,
+            Token::Backtick,
+            Token::DollarSign,
+            Token::Carrot,
             Token::Minus,
             Token::Plus,
             Token::Asterisk,
