@@ -10,7 +10,7 @@ use super::*;
 pub struct Context<'input> {
     /// Variable allocation data
     pub allocations: AllocationTable<'input>,
-    operators: Vec<(Vec<crate::frontend::lex::Token<'input>>, String)>,
+    operators: Vec<(Vec<crate::frontend::lex::Token>, String)>,
     /// Function signatures
     pub functions: FunctionTable<'input>,
     /// Struct signatures
@@ -561,12 +561,12 @@ impl<'input> Context<'input> {
                 // Check each assigned field/value with the expected fields/values
                 for (field_name, expr) in fields {
                     // FIXME: Another (not terrible) hack to satisfy borrows
-                    let field_type = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name)
+                    let field_type = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name.as_str())
                         .ok_or(format!("Type `{}` has no field `{}`", ty, field_name))?
                         .ty.clone();
                     
                     // Required field is accounted for
-                    required_fields.remove(field_name);
+                    required_fields.remove(field_name.as_str());
 
                     let assigned_type = self.validate_expression(expr)?;
                     if assigned_type != field_type {
@@ -662,10 +662,11 @@ impl<'input> Context<'input> {
 
     /// If an expression reduces to an alias, return the alias.  
     /// Returns `None` if the expression does not alias any variables.
-    fn reduce_expression_to_alias(validated_expression: &ast::Expression<'input>) -> Option<&'input str> {
-        if let ast::Expression::Ident { name, .. } = validated_expression {
-            return Some(name);
-        }
+    // TODO: Re-enable this once used
+    fn reduce_expression_to_alias(validated_expression: &ast::Expression<'input>) -> Option<&'static str> {
+        // if let ast::Expression::Ident { name, .. } = validated_expression {
+        //     return Some(name);
+        // }
 
         None
     }

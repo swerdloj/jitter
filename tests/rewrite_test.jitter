@@ -42,14 +42,19 @@ func custom_lex_callback() {
     hello_there
 }
 
-// TODO: Make all this work
-// #define hello_again hello_from_rust(456_u32);
-// #include libtest
-// func preprocessing() {
-//     imported_fn();
+// Works
+#define hello_again hello_from_rust(456_u32);
+#define no_definition
+// Works
+#include "libtest.jitter"
+// Works
+func preprocessing() {
+    let from_imported = imported_fn();
+    print_u32(from_imported);
 
-//     hello_again
-// }
+    no_definition
+    hello_again
+}
 
 // Works
 fn FFI(a: u32) {

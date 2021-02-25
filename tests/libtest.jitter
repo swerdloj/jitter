@@ -1,30 +1,28 @@
-/*
+// Testing library functionality:
 
-Testing library functionality:
+//     public/private,
+//     imports,
+//     namespaces,
+//     ect.
 
-    public/private,
-    imports,
-    namespaces,
-    ect.
+// TODO: public and private types
+// pub struct PubStruct {
+//     pub public: u32,
+//     private: u32,
+// }
 
-*/
-
-pub struct PubStruct {
-    pub public: u32,
-    private: u32,
+fn imported_fn() -> u32 {
+    10101_u32
 }
 
-pub fn imported_fn() {
+// TODO: public and private functions
+// pub fn pub_test() -> u32 {
+//     7
+// }
 
-}
-
-pub fn pub_test() -> u32 {
-    7
-}
-
-fn priv_test() -> u32 {
-    12
-}
+// fn priv_test() -> u32 {
+//     12
+// }
 
 // pub trait Add<Rhs, Output> {
 //     fn add(self, rhs: Rhs) -> Output;

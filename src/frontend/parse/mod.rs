@@ -30,7 +30,7 @@ macro_rules! parser_error {
 
 pub struct Parser<'a> {
     file_path: &'a str,
-    tokens: Vec<SpannedToken<'a>>,
+    tokens: Vec<SpannedToken>,
     // Interior mutability allows nesting method calls without worrying about `self` usage
     position: std::cell::RefCell<usize>,
 }
@@ -48,7 +48,7 @@ pub struct Parser<'a> {
 //       refers to the current token needing evaluation (rather than the most recently
 //       parsed token)
 impl<'a> Parser<'a> {
-    pub fn new(file_path: &'a str, tokens: Vec<SpannedToken<'a>>) -> Self {
+    pub fn new(file_path: &'a str, tokens: Vec<SpannedToken>) -> Self {
         Self {
             file_path,
             tokens,
@@ -191,7 +191,7 @@ impl<'a> Parser<'a> {
             // ..a
             if let Token::Ident(ident) = self.current_token() {
                 self.advance();
-                path.push(*ident);
+                path.push(ident.clone());
             }
             // ..a:
             if let Token::Colon = self.current_token() {
@@ -1210,7 +1210,7 @@ impl<'a> Parser<'a> {
                     // Just an identifier
                     _ => {
                         expression = ast::Expression::Ident {
-                            name: ident,
+                            name: ident.clone(),
                             ty: Type::Unknown,
                         };
                     }
@@ -1359,7 +1359,7 @@ impl<'a> Parser<'a> {
                 else if (self.current_token() == &Token::Comma) || (self.current_token() == &Token::CloseCurlyBrace) {
                     Node::new(
                         ast::Expression::Ident { 
-                            name: field_name,
+                            name: field_name.clone(),
                             ty: Type::Unknown,
                         },
                         // Span of the ident token
@@ -1369,7 +1369,7 @@ impl<'a> Parser<'a> {
                     parser_error!(self.file_path, self.current_span(), "Expected `:` after field name. Found {}", self.current_token());
                 };
 
-                fields.insert(*field_name, field_assignment)
+                fields.insert(field_name.clone(), field_assignment)
                     .map(|_existing| {
                         parser_error!(self.file_path, self.current_span(), "Field `{}` was already defined", self.current_token());
                     });

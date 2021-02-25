@@ -1,7 +1,10 @@
-/// Convenience function for instantiating a local Jitter context  
-/// Compiles the given file paths and links the given Rust functions
+/// Convenience function for instantiating a local Jitter context.  
+/// Compiles the given file paths and links the given Rust functions.
 ///
-/// If no functions need to be linked, simply omit the `<- [...]` section
+/// A `where` section can be used to insert lexer callbacks.
+///
+/// If no functions need to be linked, simply omit the `<- [...]` section.
+/// If no lexer replacements are needed, omit the `where [...]` section.
 ///
 /// Usage:
 /// ```Rust
@@ -15,7 +18,10 @@
 ///     ] <- [
 ///         some_function, 
 ///         ...
-///     ]    
+///     ] where [
+///         "pattern1" => "transformation1",
+///         ...
+///     ]
 /// };
 /// ```
 #[macro_export]
@@ -26,6 +32,10 @@ macro_rules! Jitter {
         // Optional function group
         $(  // Function group body (with optional trailing comma)
             <- [ $($func:ident),+    $(,)? ]
+        )?
+        // Optional lexer callbacks
+        $(
+            where [ $($input:expr => $output:expr),+    $(,)? ]
         )?
     ) => {
         JitterContextBuilder::new()
@@ -41,6 +51,18 @@ macro_rules! Jitter {
                 .with_function(stringify!($func), $func as *const u8)
             )+
         )?
+        // Lexer group
+        $(
+            $(
+                .with_lexer_callback(LexerCallback {
+                    string: $input,
+                    replacement: $output,
+                })
+            )+
+        )?
+
+        .build()
+        .expect("JIT compile")
     };
 }
 

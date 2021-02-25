@@ -37,23 +37,25 @@ struct JitterStruct {
 }
 
 fn main() {
-    let mut jitter_builder = Jitter! {
+    let jitter = Jitter! {
         ["./tests/rewrite_test.jitter"] <- [print_i32, print_u32, hello_from_rust]
+        where 
+        [
+            // Informs the lexer to replace left side with right side
+            "func" => "fn",
+            "hello_there" => "hello_from_rust(123_u32);"
+        ]
     };
 
-    // Informs the lexer to replace the word "plus" with the string "+"
-    jitter_builder.with_lexer_callback(LexerCallback {
-        string: "func",
-        replacement: "fn",
-    });
-    jitter_builder.with_lexer_callback(LexerCallback {
-        string: "hello_there",
-        replacement: "hello_from_rust(123_u32);",
-    });
-
-    let jitter = jitter_builder
-        .build()
-        .expect("JIT compile");
+    // NOTE: The above `where` clause expands to this:
+    // jitter_builder.with_lexer_callback(LexerCallback {
+    //     string: "func",
+    //     replacement: "fn",
+    // });
+    // jitter_builder.with_lexer_callback(LexerCallback {
+    //     string: "hello_there",
+    //     replacement: "hello_from_rust(123_u32);",
+    // });
 
     let ffi = GetFunction! {
         jitter::FFI as fn(u32)
@@ -87,6 +89,10 @@ fn main() {
         jitter::custom_operators as fn()
     };
 
+    let preprocessing = GetFunction! {
+        jitter::preprocessing as fn()
+    };
+
     // ffi(&9);
     // println!("test() = {}", test().into());
     // println!("params(7, 123) = {}", params(&7, &123).into());
@@ -94,6 +100,9 @@ fn main() {
     // println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
     // println!("function_call1() = {}", function_call1().into());
     // println!("function_call2() = {:?}", function_call2().into());
+    println!("Preprocessing:");
+    preprocessing();
+    println!("Operators:");
     ops();
 }
 
@@ -104,7 +113,7 @@ fn main() {
     
     let mut jitter = Jitter! {
         ["./tests/integration_test.jitter"] <- [hello_from_rust]
-    }.build().unwrap();
+    };
     
     // The above is equivalent to this:
     

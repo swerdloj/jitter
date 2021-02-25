@@ -52,8 +52,9 @@ impl<'a> JitterContextBuilder<'a> {
     }
 
     /// Defines a callback for use when either Lexing or Parsing
-    pub fn with_lexer_callback(&mut self, callback: LexerCallback<'a>) {
+    pub fn with_lexer_callback(mut self, callback: LexerCallback<'a>) -> Self {
         self.lexer_callbacks.push(callback);
+        self
     }
 
     pub fn with_source_path(mut self, path: &'a str) -> Self {
@@ -71,7 +72,7 @@ impl<'a> JitterContextBuilder<'a> {
         if self.source_path != "" {
             // Lex
             let input = &std::fs::read_to_string(self.source_path).expect("Read input");
-            let mut lexer = crate::frontend::lex::Lexer::new(self.source_path, input, true);
+            let mut lexer = crate::frontend::lex::Lexer::new(self.source_path.to_owned(), input.to_owned(), true);
             lexer.parse_callbacks(self.lexer_callbacks);
 
             let tokens = lexer.lex();

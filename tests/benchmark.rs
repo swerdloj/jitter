@@ -40,9 +40,9 @@ mod tests {
 
         let read_and_tokenize = time("read_and_tokenize");
         // Read file to string
-        let input = &std::fs::read_to_string(path).unwrap();
+        let input = std::fs::read_to_string(path).unwrap();
         // Tokenize the input
-        let tokens = jitter::frontend::lex::Lexer::lex_str(path.as_ref(), input, true);
+        let tokens = jitter::frontend::lex::Lexer::lex_str(path.to_owned(), input, true);
         total_time += read_and_tokenize.end();
 
 

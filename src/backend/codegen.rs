@@ -233,7 +233,7 @@ impl<'input> FunctionTranslator<'input> {
         }
     }
 
-    fn translate_field_constructor(&mut self, ty: &CompilerType, fields: &std::collections::HashMap<&str, ast::Node<ast::Expression>>) -> Value {
+    fn translate_field_constructor(&mut self, ty: &CompilerType, fields: &std::collections::HashMap<String, ast::Node<ast::Expression>>) -> Value {
         // 1. Allocate memory for the object
         // FIXME: Narrowing cast
         let size = self.validation_context.types.size_of(ty) as u32;

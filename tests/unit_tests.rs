@@ -30,9 +30,9 @@ mod tests {
     #[test]
     fn parser() {
         let path = "./tests/parse_test.jitter";
-        let input = &std::fs::read_to_string(path).unwrap();
+        let input = std::fs::read_to_string(path).unwrap();
 
-        let tokens = Lexer::lex_str(path, input, true);
+        let tokens = Lexer::lex_str(path.to_owned(), input, true);
 
         let parser = Parser::new(path, tokens);
         parser.parse_ast("parser_test");
@@ -41,10 +41,10 @@ mod tests {
    #[test]
    fn lexer() {
         let path = "./tests/lex_test.txt";
-        let test_input = &std::fs::read_to_string(path).unwrap();
+        let test_input = std::fs::read_to_string(path).unwrap();
 
         // Remove spans
-        let test_tokens = Lexer::lex_str(path, test_input, true)
+        let test_tokens = Lexer::lex_str(path.to_owned(), test_input, true)
             .into_iter()
             .map(|spanned| {
                 spanned.token
@@ -68,15 +68,15 @@ mod tests {
             Token::Number(10),
             Token::Dot,
             Token::Number(88),
-            Token::Ident("f32"),
+            Token::Ident("f32".to_owned()),
 
             Token::Number(100),
-            Token::Ident("usize"),
+            Token::Ident("usize".to_owned()),
             // Identifiers
-            Token::Ident("ident"),
-            Token::Ident("_0_1"),
-            Token::Ident("_1test"),
-            Token::Ident("test1_"),
+            Token::Ident("ident".to_owned()),
+            Token::Ident("_0_1".to_owned()),
+            Token::Ident("_1test".to_owned()),
+            Token::Ident("test1_".to_owned()),
             // Keywords
             Token::Keyword(Keyword::Binary),
             Token::Keyword(Keyword::Box),
@@ -100,6 +100,7 @@ mod tests {
             Token::Backtick,
             Token::DollarSign,
             Token::Carrot,
+            // Token::Pound, <-- gets ignored
             Token::Minus,
             Token::Plus,
             Token::Asterisk,

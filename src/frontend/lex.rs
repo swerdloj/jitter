@@ -25,18 +25,20 @@ pub enum Keyword {
 
 // NOTE: Using the lifetime prevents allocations at the cost of one infectious lifetime
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Token<'input> {
+pub enum Token {
     Number(usize),
-    Ident(&'input str),
+    Ident(String),
     Keyword(Keyword),
+    String(String),
     
     At,                 // '@'
 
-    // DoubleQuote,        // '"'
+    DoubleQuote,        // '"'
     DollarSign,         // '$'
     Carrot,             // '^'
     BackSlash,          // '\'
     Backtick,           // '`'
+    Pound,              // '#'
 
     Minus,              // '-'
     Plus,               // '+'
@@ -56,7 +58,8 @@ pub enum Token<'input> {
     Bang,               // '!'
     Pipe,               // '|'
 
-    Whitespace,         // '\r', '\n', '\t', ' ', .. 
+    NewLine,            // '\n' (special case)
+    Whitespace,         // '\r', '\t', ' ', .. 
 
     OpenParen,          // '('
     CloseParen,         // ')'
@@ -68,11 +71,12 @@ pub enum Token<'input> {
     CloseSquareBracket, // ']'
 }
 
-impl<'input> std::fmt::Display for Token<'input> {
+impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = match self {
             Token::Number(number) => format!("numeric literal: {}", number),
             Token::Ident(ident) => format!("identifier: {}", ident),
+            Token::String(string) => format!("string literal: {}", string),
             Token::Keyword(keyword) => {
                 let word = match keyword {
                     Keyword::Binary => "binary",
@@ -99,7 +103,8 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Carrot => "^".to_owned(),
             Token::BackSlash => "\\".to_owned(),
             Token::Backtick => "`".to_owned(),
-            // Token::DoubleQuote => "\"".to_owned(),
+            Token::Pound => "#".to_owned(),
+            Token::DoubleQuote => "\"".to_owned(),
             Token::Minus => "-".to_owned(),
             Token::Plus => "+".to_owned(),
             Token::Asterisk => "*".to_owned(),
@@ -114,7 +119,8 @@ impl<'input> std::fmt::Display for Token<'input> {
             Token::Bang => "!".to_owned(),
             Token::Pipe => "|".to_owned(),
             Token::And => "&".to_owned(),
-            Token::Whitespace => panic!("TODO: Display whitespace?"),
+            Token::NewLine => "NEWLINE".to_owned(), // TODO: These?
+            Token::Whitespace => "WHITESPACE".to_owned(),
             Token::OpenParen => "(".to_owned(),
             Token::CloseParen => ")".to_owned(),
             Token::OpenCurlyBrace => "{".to_owned(),
@@ -127,7 +133,7 @@ impl<'input> std::fmt::Display for Token<'input> {
     }
 }
 
-impl<'input> Token<'input> {
+impl Token {
     pub fn is_number(&self) -> bool {
         if let Token::Number(_) = self { true } else { false }
     }
@@ -139,8 +145,8 @@ impl<'input> Token<'input> {
     }
 }
 
-impl<'input> Token<'input> {
-    pub fn spanned(self, start_line: usize, start_column: usize, end_line: usize, end_column: usize) -> SpannedToken<'input> {
+impl Token {
+    pub fn spanned(self, start_line: usize, start_column: usize, end_line: usize, end_column: usize) -> SpannedToken {
         SpannedToken {
             token: self,
             span: crate::Span {
@@ -154,15 +160,52 @@ impl<'input> Token<'input> {
 }
 
 #[derive(Debug)]
-pub struct SpannedToken<'input> {
-    pub token: Token<'input>,
+pub struct SpannedToken {
+    pub token: Token,
     pub span: crate::Span,
 }
 
-pub struct Lexer<'input> {
-    file_path: &'input str,
-    input: &'input str,
-    bytes: &'input [u8],
+
+pub enum PreprocessorState {
+    FoundPound,
+    Define,
+    Include,
+    AwaitingNewLine,
+    None,
+}
+
+pub struct Preprocessor {
+    state: PreprocessorState,
+
+    define_from: Token,
+    define_to: Vec<Token>,
+
+    include_path: String,
+}
+
+impl Preprocessor {
+    pub fn new() -> Self {
+        Self {
+            state: PreprocessorState::None,
+
+            // NOTE: This is just a default. Will be replaced before use
+            //       Pound cannot appear in this position, so this safe anyway.
+            define_from: Token::Pound,
+            
+            define_to: Vec::new(),
+
+            include_path: String::with_capacity(0),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
+
+pub struct Lexer {
+    file_path: String,
+    input: String,
     position: usize,
 
     last_line: usize,
@@ -172,15 +215,17 @@ pub struct Lexer<'input> {
 
     strip_whitespace: bool,
 
-    custom_replacements: HashMap<Token<'input>, Vec<Token<'input>>>,
+    preprocessor: Preprocessor,
+
+    // Token replacements (seen_token -> becomes)
+    custom_replacements: HashMap<Token, Vec<Token>>,
 }
 
-impl<'input> Lexer<'input> {
-    pub fn new(file_path: &'input str, input: &'input str, strip_whitespace: bool) -> Self {
+impl Lexer {
+    pub fn new(file_path: String, input: String, strip_whitespace: bool) -> Self {
         Self {
             file_path,
             input,
-            bytes: input.as_bytes(),
             position: 0,
             last_line: 0,
             last_column: 0,
@@ -188,14 +233,16 @@ impl<'input> Lexer<'input> {
             current_column: 0,
             strip_whitespace,
 
+            preprocessor: Preprocessor::new(),
+
             custom_replacements: HashMap::new(),
         }
     }
 
-    pub fn parse_callbacks(&mut self, callbacks: Vec<super::LexerCallback<'input>>) {
+    pub fn parse_callbacks(&mut self, callbacks: Vec<super::LexerCallback>) {
         for cb in callbacks {
-            let mut input_lexer = Self::new("custom input", cb.string, true);
-            let mut output_lexer = Self::new("custom output", cb.replacement, true);
+            let mut input_lexer = Self::new("custom input".to_owned(), cb.string.to_owned(), true);
+            let mut output_lexer = Self::new("custom output".to_owned(), cb.replacement.to_owned(), true);
 
             let input = input_lexer.lex();
             let output = output_lexer
@@ -212,7 +259,7 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    fn make_spanned<'a>(&self, token: Token<'a>) -> SpannedToken<'a> {
+    fn make_spanned(&self, token: Token) -> SpannedToken {
         token.spanned(self.last_line, self.last_column, self.current_line, self.current_column)
     }
 
@@ -222,7 +269,7 @@ impl<'input> Lexer<'input> {
     }
 
     /// Converts the given input to tokens. `file_path` is used only for printing errors.
-    pub fn lex_str(file_path: &'input str, input: &'input str, strip_whitespace: bool) -> Vec<SpannedToken<'input>> {
+    pub fn lex_str(file_path: String, input: String, strip_whitespace: bool) -> Vec<SpannedToken> {
         Lexer::new(file_path, input, strip_whitespace).lex()
     }
 
@@ -235,13 +282,12 @@ impl<'input> Lexer<'input> {
 
     /// Returns the character at the current position
     fn current(&mut self) -> char {
-        self.bytes[self.position] as char
+        self.input.chars().nth(self.position).unwrap()// as char
     }
 
     /// Returns the next character. Returns `None` if no characters remain.
     fn peek_next(&mut self) -> Result<char, String> {
-        self.bytes.get(self.position + 1)
-            .map(|byte| *byte as char)
+        self.input.chars().nth(self.position + 1)
             .ok_or(format!("Unexpected EOF: {}:{}:{}", self.file_path, self.current_line, self.current_column))
     }
 
@@ -274,16 +320,119 @@ impl<'input> Lexer<'input> {
     }
 
     // TODO: Don't exit, but flag the parser to not finish compilation
-    pub fn lex(&mut self) -> Vec<SpannedToken<'input>> {
+    pub fn lex(&mut self) -> Vec<SpannedToken> {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
-        while self.position < self.bytes.len() {
+        while self.position < self.input.len() {
             match self.lex_next_token() {
                 Ok(token) => {
                     if self.strip_whitespace {
                         if let Token::Whitespace = token.token {
                             continue;
+                        }
+                    }
+
+                    // Found `#` in `#directive from to`
+                    if let Token::Pound = token.token {
+                        if let PreprocessorState::None = self.preprocessor.state {
+                            self.preprocessor.state = PreprocessorState::FoundPound;
+                        } else {
+                            errors.push(format!("Preprocessor directive cannot include `#` symbol"));
+                        }
+                        continue;
+                    }
+                    
+                    match self.preprocessor.state {
+                        // Identify the directive in `#directive`
+                        PreprocessorState::FoundPound => {
+                            if let Token::Ident(directive) = token.token {
+                                match directive.to_lowercase().as_str() {
+                                    "define" => self.preprocessor.state = PreprocessorState::Define,
+                                    "include" => self.preprocessor.state = PreprocessorState::Include,
+    
+                                    _ => {
+                                        errors.push(format!("Invalid preprocessor directive: `{}`\nValid options are `define`, `include`", directive));
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+
+                        // Identify `from`
+                        PreprocessorState::Define => {
+                            // FIXME: Pound is the default value, meaning
+                            //        the field is "empty". This could be
+                            //        changed to something more clear.
+                            if self.preprocessor.define_from == Token::Pound {
+                                self.preprocessor.define_from = token.token;
+                                self.preprocessor.state = PreprocessorState::AwaitingNewLine;
+                            } 
+                            continue;
+                        }
+                        PreprocessorState::Include => {
+                            // Get `file` in `#include file`
+                            if self.preprocessor.include_path.is_empty() {
+                                if let Token::String(string) = token.token {
+                                    // self.preprocessor.include_path = string;
+
+                                    
+                                    // 0. Convert this source path to actual path
+                                    let mut target_path = std::path::PathBuf::from(&self.file_path);
+                                    target_path.pop();
+                                    target_path.push(&string);
+                                    
+                                    // 1. Read the file to string
+                                    println!("Inserting file: {:?}", target_path);
+                                    let target_source = std::fs::read_to_string(target_path);
+                                    if target_source.is_err() {
+                                        errors.push(format!("Failed to read file: `./{}`", &string));
+                                        continue;
+                                    }
+                                    let target_source = target_source.unwrap();
+
+                                    // 2. Lex the file, obtaining spanned tokens
+                                    let target_tokens = Lexer::lex_str(string, target_source, true);
+                                    // 3. Insert the tokens into this lexer (via `tokens.push()`)
+                                    target_tokens.into_iter().for_each(|t| tokens.push(t));
+        
+                                    self.preprocessor.state = PreprocessorState::AwaitingNewLine;
+                                }
+                            }
+
+                            continue;
+                        }
+
+                        PreprocessorState::AwaitingNewLine => {
+                            if let Token::NewLine = token.token {
+                                
+                                // Finalize a `#define`
+                                if self.preprocessor.define_from != Token::Pound {
+                                    // println!("Registering definition: ({}) -> {:?}", self.preprocessor.define_from, self.preprocessor.define_to);
+                                    self.custom_replacements.insert(self.preprocessor.define_from.clone(), self.preprocessor.define_to.clone());
+                                }
+
+                                self.preprocessor.reset();
+                            } else {
+                                // Have `#define item`, look for the actual definition
+                                if self.preprocessor.define_from != Token::Pound {
+                                    self.preprocessor.define_to.push(token.token);
+                                } else { 
+                                    // Do not allow dangling tokens
+                                    errors.push(format!("Found unexpected token `{}` while waiting for new line.", token.token));
+                                }
+                            }
+
+                            continue;
+                        }
+
+                        // Not looking for anything
+                        PreprocessorState::None => {
+                            if let Token::NewLine = token.token {
+                                if self.strip_whitespace {
+                                    continue;
+                                }
+                            }
                         }
                     }
 
@@ -320,7 +469,7 @@ impl<'input> Lexer<'input> {
     }
 
     /// Lexes the input, returning spanned tokens
-    fn lex_next_token(&mut self) -> Result<SpannedToken<'input>, String> {
+    fn lex_next_token(&mut self) -> Result<SpannedToken, String> {
         use Token::*;
         
         self.reset_last_position();
@@ -332,13 +481,31 @@ impl<'input> Lexer<'input> {
                 if it == '\n' {
                     self.current_column = 0;
                     self.current_line += 1;
+                    self.advance();
+                    NewLine
+                } else {
+                    self.advance();
+                    Whitespace
                 }
-
-                self.advance();
-
-                Whitespace
             }
 
+            // Attempt to find string literal
+            // FIXME: This is a simple, naive approach
+            '"' => {
+                self.advance();
+
+                let mut string = std::string::String::new();
+                // TODO: Bounds check on lexer position
+                // TODO: Can set flag upon seeing \ which ignores following "
+                while self.current() != '"' {
+                    string.push(self.current());
+                    self.advance();
+                }
+                self.advance();
+
+                String(string)
+                // DoubleQuote
+            }
             '@' => {
                 self.advance();
                 At
@@ -359,6 +526,10 @@ impl<'input> Lexer<'input> {
                 self.advance();
                 DollarSign
             }
+            '#' => {
+                self.advance();
+                Pound
+            }
             '+' => {
                 self.advance();
                 Plus
@@ -371,7 +542,7 @@ impl<'input> Lexer<'input> {
             '/' => {
                 self.advance();
                 if self.current() == '/' {
-                    while self.position < self.bytes.len() && self.current() != '\n' {
+                    while self.position < self.input.len() && self.current() != '\n' {
                         self.advance();
                     }
                     // don't advance here to re-use whitespace logic
@@ -724,9 +895,7 @@ impl<'input> Lexer<'input> {
                     _ => {}
                 }
 
-                if let Some(token) = token {
-                    token
-                } else {
+                if token.is_none() {
                     while let Ok(next) = self.peek_next() {
                         if next.is_ascii_alphanumeric() || next == '_' {
                             self.advance();
@@ -739,8 +908,10 @@ impl<'input> Lexer<'input> {
                     
                     self.advance();
                     
-                    Ident(&self.input[from..=to])
+                    token = Some(Ident(self.input[from..=to].into()));
                 }
+
+                token.unwrap()
             }
 
             it if it.is_digit(10) => {

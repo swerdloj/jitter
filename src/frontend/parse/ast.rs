@@ -54,11 +54,11 @@ pub struct AST<'input> {
     pub module:    &'input str,
     pub externs:   Vec<Node<ExternBlock<'input>>>,
     pub functions: Vec<Node<Function<'input>>>,
-    pub operators: Vec<Operator<'input>>,
+    pub operators: Vec<Operator>,
     pub traits:    Vec<Node<Trait<'input>>>,
     pub impls:     Vec<Node<Impl<'input>>>,
     pub structs:   Vec<Node<Struct<'input>>>,
-    pub uses:      Vec<Node<Use<'input>>>,
+    pub uses:      Vec<Node<Use>>,
      // TODO: These
     // pub constants: Vec<Node<()>>,
 }
@@ -116,18 +116,18 @@ impl<'input> AST<'input> {
 pub enum TopLevel<'input> {
     ExternBlock(Node<ExternBlock<'input>>),
     Function(Node<Function<'input>>),
-    Operator(Node<Operator<'input>>, Node<Function<'input>>),
+    Operator(Node<Operator>, Node<Function<'input>>),
     Trait(Node<Trait<'input>>),
     Impl(Node<Impl<'input>>),
     Struct(Node<Struct<'input>>),
-    Use(Node<Use<'input>>),
+    Use(Node<Use>),
     ConstDeclaration,
 }
 
 #[derive(Debug)]
-pub struct Use<'input> {
+pub struct Use {
     // a::b::c becomes [a, b, c]
-    pub path: Vec<&'input str>,
+    pub path: Vec<String>,
 }
 
 pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
@@ -140,8 +140,8 @@ pub struct Function<'input> {
 }
 
 #[derive(Debug)]
-pub struct Operator<'input> {
-    pub pattern: Vec<Token<'input>>,
+pub struct Operator {
+    pub pattern: Vec<Token>,
     pub associated_function: String,
     pub is_binary: bool,
     pub is_public: bool,
@@ -227,13 +227,13 @@ pub enum Statement<'input> {
 pub enum Expression<'input> {
     BinaryExpression {
         lhs: Box<Node<Expression<'input>>>,
-        op: Node<BinaryOp<'input>>,
+        op: Node<BinaryOp>,
         rhs: Box<Node<Expression<'input>>>,
         ty: Type<'input>,
     },
 
     UnaryExpression {
-        op: Node<UnaryOp<'input>>,
+        op: Node<UnaryOp>,
         expr: Box<Node<Expression<'input>>>,
         ty: Type<'input>,
     },
@@ -243,7 +243,7 @@ pub enum Expression<'input> {
         // Name of type
         ty: Type<'input>,
         // Map of (field_name -> value)
-        fields: std::collections::HashMap<&'input str, Node<Expression<'input>>>,
+        fields: std::collections::HashMap<String, Node<Expression<'input>>>,
     },
 
     /// Accessing a field of a type
@@ -277,7 +277,7 @@ pub enum Expression<'input> {
     },
 
     Ident {
-        name: &'input str,
+        name: String,
         ty: Type<'input>,
     },
 }
@@ -316,22 +316,22 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum UnaryOp<'input> {
+pub enum UnaryOp {
     Negate,
     Not,
-    Custom(Vec<Token<'input>>),
+    Custom(Vec<Token>),
 }
 
 #[derive(Debug, Clone)]
-pub enum BinaryOp<'input> {
+pub enum BinaryOp {
     Add,
     Subtract,
     Multiply,
     Divide,
-    Custom(Vec<Token<'input>>),
+    Custom(Vec<Token>),
 }
 
-impl<'input> BinaryOp<'input> {
+impl BinaryOp {
     pub fn from_token(symbol_token: &SpannedToken) -> Self {
         match symbol_token.token {
             Token::Plus => BinaryOp::Add,
