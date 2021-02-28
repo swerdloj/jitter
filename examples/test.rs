@@ -85,6 +85,10 @@ fn main() {
         jitter::function_call2 as fn() -> JitterStruct
     };
 
+    let callback = GetFunction! {
+        jitter::custom_lex_callback as fn()
+    };
+
     let ops = GetFunction! {
         jitter::custom_operators as fn()
     };
@@ -100,9 +104,10 @@ fn main() {
     // println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
     // println!("function_call1() = {}", function_call1().into());
     // println!("function_call2() = {:?}", function_call2().into());
-    println!("Preprocessing:");
+    callback();
+    println!("--preprocessing()--");
     preprocessing();
-    println!("Operators:");
+    println!("--operators()--");
     ops();
 }
 

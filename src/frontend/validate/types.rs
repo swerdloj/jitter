@@ -4,11 +4,11 @@ use cranelift::codegen::ir::types as cranelift_types;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
-pub enum Type<'input> {
+pub enum Type {
     /// Pointer to a memory location (TODO: Stack only?)  
     /// `&T` or `&mut T`
     Reference {
-        ty: Box<Type<'input>>,
+        ty: Box<Type>,
         mutable: bool,
     },
 
@@ -63,7 +63,7 @@ pub enum Type<'input> {
     Unit,
 
     /// (A, B, C, ...)
-    Tuple(Vec<Type<'input>>),
+    Tuple(Vec<Type>),
 
     // [type; length]
     // Array {
@@ -72,13 +72,13 @@ pub enum Type<'input> {
     // },
     
     /// Name of a struct, enum, alias, etc.
-    User(&'input str),
+    User(String),
 
     /// Unspecified and uninferred type
     Unknown,
 }
 
-impl std::fmt::Display for Type<'_> {
+impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = match self {
             Type::Reference { ty, mutable } => {
@@ -117,7 +117,7 @@ impl std::fmt::Display for Type<'_> {
 
                 string
             },
-            Type::User(t) => String::from(*t),
+            Type::User(t) => t.clone(),
             Type::Unknown => "!Unknown!".to_owned(),
         };
 
@@ -125,10 +125,10 @@ impl std::fmt::Display for Type<'_> {
     }
 }
 
-impl<'input> Type<'input> {
+impl Type {
     /// Resolves a type (as text) obtained from lexer/parser to an internal type
-    pub fn resolve_builtin(type_str: &str) -> Type {
-        match type_str {
+    pub fn resolve_builtin(type_str: String) -> Type {
+        match type_str.as_str() {
             "u8" => Type::u8,
             "u16" => Type::u16,
             "u32" => Type::u32,

@@ -20,13 +20,13 @@ pub struct FunctionTranslator<'input> {
     module: &'input mut cranelift_simplejit::SimpleJITModule,
     // Maps variable names to memory locations
     data: super::MemoryMap,
-    validation_context: &'input ValidationContext<'input>,
+    validation_context: &'input ValidationContext,
     // Map of already declared functions to their references
     declared_functions: std::collections::HashMap<cranelift_module::FuncId, cranelift::codegen::ir::entities::FuncRef>,
 }
 
 impl<'input> FunctionTranslator<'input> {
-    pub fn new(pointer_type: &'input Type, fn_builder: FunctionBuilder<'input>, module: &'input mut cranelift_simplejit::SimpleJITModule, validation_context: &'input ValidationContext<'input>) -> Self {
+    pub fn new(pointer_type: &'input Type, fn_builder: FunctionBuilder<'input>, module: &'input mut cranelift_simplejit::SimpleJITModule, validation_context: &'input ValidationContext) -> Self {
         Self {
             pointer_type,
             fn_builder,
@@ -54,7 +54,7 @@ impl<'input> FunctionTranslator<'input> {
         for (index, param) in function.prototype.parameters.iter().enumerate() {                        
             let param_address = self.fn_builder.block_params(entry_block)[index];
             
-            let var = self.data.create_variable(param.name);
+            let var = self.data.create_variable(&param.name);
             // Address is passed in to the function rather than actual value
             self.fn_builder.declare_var(var, *self.pointer_type);
             self.fn_builder.def_var(var, param_address);

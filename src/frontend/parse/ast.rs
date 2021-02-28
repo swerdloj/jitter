@@ -50,21 +50,21 @@ impl<T> Node<T> {
 // TODO: Might want to make these HashMaps instead of Vecs
 //       for convenience
 #[derive(Debug)]
-pub struct AST<'input> {
-    pub module:    &'input str,
-    pub externs:   Vec<Node<ExternBlock<'input>>>,
-    pub functions: Vec<Node<Function<'input>>>,
+pub struct AST {
+    pub module:    String,
+    pub externs:   Vec<Node<ExternBlock>>,
+    pub functions: Vec<Node<Function>>,
     pub operators: Vec<Operator>,
-    pub traits:    Vec<Node<Trait<'input>>>,
-    pub impls:     Vec<Node<Impl<'input>>>,
-    pub structs:   Vec<Node<Struct<'input>>>,
+    pub traits:    Vec<Node<Trait>>,
+    pub impls:     Vec<Node<Impl>>,
+    pub structs:   Vec<Node<Struct>>,
     pub uses:      Vec<Node<Use>>,
      // TODO: These
     // pub constants: Vec<Node<()>>,
 }
 
-impl<'input> AST<'input> {
-    pub fn new(module: &'input str) -> Self {
+impl AST {
+    pub fn new(module: String) -> Self {
         Self {
             module,
             externs:   Vec::new(),
@@ -80,7 +80,7 @@ impl<'input> AST<'input> {
     /// Create a placeholder AST with no heap allocations
     pub(crate) fn placeholder() -> Self {
         Self {
-            module:    "",
+            module:    String::with_capacity(0),
             externs:   Vec::with_capacity(0),
             functions: Vec::with_capacity(0),
             operators: Vec::with_capacity(0),
@@ -94,7 +94,7 @@ impl<'input> AST<'input> {
     // FIXME: This is a bit of indirection that can be avoided by simply
     //        using `parse_top_level` to directly insert into the AST
     //        (rather than going through `TopLevel`)
-    pub fn insert_top_level(&mut self, item: TopLevel<'input>) {
+    pub fn insert_top_level(&mut self, item: TopLevel) {
         match item {
             TopLevel::ExternBlock(i) => self.externs.push(i),
             TopLevel::Function(i) => self.functions.push(i),
@@ -113,13 +113,13 @@ impl<'input> AST<'input> {
 }
 
 #[derive(Debug)]
-pub enum TopLevel<'input> {
-    ExternBlock(Node<ExternBlock<'input>>),
-    Function(Node<Function<'input>>),
-    Operator(Node<Operator>, Node<Function<'input>>),
-    Trait(Node<Trait<'input>>),
-    Impl(Node<Impl<'input>>),
-    Struct(Node<Struct<'input>>),
+pub enum TopLevel {
+    ExternBlock(Node<ExternBlock>),
+    Function(Node<Function>),
+    Operator(Node<Operator>, Node<Function>),
+    Trait(Node<Trait>),
+    Impl(Node<Impl>),
+    Struct(Node<Struct>),
     Use(Node<Use>),
     ConstDeclaration,
 }
@@ -130,12 +130,12 @@ pub struct Use {
     pub path: Vec<String>,
 }
 
-pub type ExternBlock<'input> = Vec<Node<FunctionPrototype<'input>>>;
+pub type ExternBlock = Vec<Node<FunctionPrototype>>;
 
 #[derive(Debug)]
-pub struct Function<'input> {
-    pub prototype: Node<FunctionPrototype<'input>>,
-    pub body: Node<BlockExpression<'input>>,
+pub struct Function {
+    pub prototype: Node<FunctionPrototype>,
+    pub body: Node<BlockExpression>,
     pub is_public: bool,
 }
 
@@ -148,144 +148,144 @@ pub struct Operator {
 }
 
 #[derive(Debug)]
-pub struct Trait<'input> {
-    pub name: &'input str,
-    pub default_functions: Vec<Node<Function<'input>>>,
-    pub required_functions: Vec<Node<FunctionPrototype<'input>>>,
+pub struct Trait {
+    pub name: String,
+    pub default_functions: Vec<Node<Function>>,
+    pub required_functions: Vec<Node<FunctionPrototype>>,
     pub is_public: bool,
     // TODO: Constants, associated types, etc.
 }
 
 #[derive(Debug)]
-pub struct Impl<'input> {
-    pub trait_name: &'input str,
-    pub target_name: &'input str,
-    pub functions: Vec<Node<Function<'input>>>,
+pub struct Impl {
+    pub trait_name: String,
+    pub target_name: String,
+    pub functions: Vec<Node<Function>>,
     // TODO: Constants, etc.
 }
 
 #[derive(Debug)]
-pub struct FunctionPrototype<'input> {
-    pub name: &'input str,
-    pub parameters: Node<FunctionParameterList<'input>>,
-    pub return_type: Type<'input>,
+pub struct FunctionPrototype {
+    pub name: String,
+    pub parameters: Node<FunctionParameterList>,
+    pub return_type: Type,
 }
 
 #[derive(Debug)]
-pub struct Struct<'input> {
-    pub name: &'input str,
-    pub fields: Node<StructFieldList<'input>>,
+pub struct Struct {
+    pub name: String,
+    pub fields: Node<StructFieldList>,
     pub is_public: bool,
 }
 
-pub type StructFieldList<'input> = Vec<Node<StructField<'input>>>;
+pub type StructFieldList = Vec<Node<StructField>>;
 
 #[derive(Debug)]
-pub struct StructField<'input> {
-    pub name: &'input str,
-    pub ty: Type<'input>,
+pub struct StructField {
+    pub name: String,
+    pub ty: Type,
     pub is_public: bool,
 }
 
-pub type FunctionParameterList<'input> = Vec<Node<FunctionParameter<'input>>>;
+pub type FunctionParameterList = Vec<Node<FunctionParameter>>;
 
 #[derive(Debug)]
-pub struct FunctionParameter<'input> {
+pub struct FunctionParameter {
     pub mutable: bool,
-    pub name: &'input str,
-    pub ty: Type<'input>,
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement<'input> {
+pub enum Statement {
     Let {
-        ident: &'input str,
+        ident: String,
         mutable: bool,
-        ty: Type<'input>,
-        value: Option<Node<Expression<'input>>>,
+        ty: Type,
+        value: Option<Node<Expression>>,
     },
 
     Assign {
-        lhs: Node<Expression<'input>>,
+        lhs: Node<Expression>,
         operator: Node<AssignmentOp>,
-        expression: Node<Expression<'input>>,
+        expression: Node<Expression>,
     },
 
     ImplicitReturn {
-        expression: Node<Expression<'input>>,
+        expression: Node<Expression>,
         is_function_return: bool,
     },
 
     Return {
-        expression: Node<Expression<'input>>,
+        expression: Node<Expression>,
     },
 
-    Expression(Node<Expression<'input>>),
+    Expression(Node<Expression>),
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression<'input> {
+pub enum Expression {
     BinaryExpression {
-        lhs: Box<Node<Expression<'input>>>,
+        lhs: Box<Node<Expression>>,
         op: Node<BinaryOp>,
-        rhs: Box<Node<Expression<'input>>>,
-        ty: Type<'input>,
+        rhs: Box<Node<Expression>>,
+        ty: Type,
     },
 
     UnaryExpression {
         op: Node<UnaryOp>,
-        expr: Box<Node<Expression<'input>>>,
-        ty: Type<'input>,
+        expr: Box<Node<Expression>>,
+        ty: Type,
     },
 
     /// Constructor for a type with fields
     FieldConstructor {
         // Name of type
-        ty: Type<'input>,
+        ty: Type,
         // Map of (field_name -> value)
-        fields: std::collections::HashMap<String, Node<Expression<'input>>>,
+        fields: std::collections::HashMap<String, Node<Expression>>,
     },
 
     /// Accessing a field of a type
     FieldAccess {
         /// The `lhs` of `lhs.field`
-        base_expr: Box<Node<Expression<'input>>>,
+        base_expr: Box<Node<Expression>>,
         /// The field identifier being used
-        field: &'input str,
+        field: String,
         /// The type of this FieldAccess (the field's type)
-        ty: Type<'input>,
+        ty: Type,
     },
 
     // MethodCall {
-    //     ty: Type<'input>,
+    //     ty: Type,
     // }
 
     FunctionCall {
         /// Name of function being called
         name: String,
         /// Expressions passed as input to the function (in order)
-        inputs: Vec<Node<Expression<'input>>>,
+        inputs: Vec<Node<Expression>>,
         /// Type returned by the function
-        ty: Type<'input>,
+        ty: Type,
     },
 
-    Block(BlockExpression<'input>),
+    Block(BlockExpression),
 
     Literal { 
         value: Literal,
-        ty: Type<'input>,
+        ty: Type,
     },
 
     Ident {
         name: String,
-        ty: Type<'input>,
+        ty: Type,
     },
 }
 
-impl<'input> Expression<'input> {
+impl Expression {
     /// Returns the type of the expression as known at that time.  
     /// Type may be unknown for non-validated expressions
-    pub fn get_type(&self) -> &Type<'input> {
+    pub fn get_type(&self) -> &Type {
         match self {
             Expression::BinaryExpression { ty, .. } => ty,
             Expression::UnaryExpression { ty, .. } => ty,
@@ -300,9 +300,9 @@ impl<'input> Expression<'input> {
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockExpression<'input> {
-    pub block: Node<Vec<Node<Statement<'input>>>>,
-    pub ty: Type<'input>,
+pub struct BlockExpression {
+    pub block: Node<Vec<Node<Statement>>>,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]

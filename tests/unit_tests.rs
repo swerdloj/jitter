@@ -35,7 +35,7 @@ mod tests {
         let tokens = Lexer::lex_str(path.to_owned(), input, true);
 
         let parser = Parser::new(path, tokens);
-        parser.parse_ast("parser_test");
+        parser.parse_ast("parser_test".to_owned());
     }
 
    #[test]

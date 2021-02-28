@@ -95,6 +95,7 @@ fn use_meta_function() {
 }
 ```
 
+TODO: Mention C# source generators
 
 ### **Metaprogramming: macros**
 Typical macros as used by Rust. Such macros allow for the parsing of tokens in a user-defined order. Because the host-language's parser is used, macros trade functionality for ease-of-use.
@@ -136,7 +137,7 @@ fn use_macro() {
 }
 ```
 
-## 2. Language Extensions
+## 2. Integrated Language Extension
 ### **Treating the compiler as a library**
 Languages such as Jitter are intended for embedded use. This means the Jitter compiler itself is compiled within the host program.
 
@@ -169,7 +170,7 @@ fn create_context_with_callback() {
 ```
 
 *Jitter Implementation*  
-Lexer:
+Lexer Callbacks:
 1. Lex the input `string` into tokens
 2. Lex the `replacement` into tokens
 3. Map the input tokens to the corresponding replacement tokens -- store in `Lexer`
@@ -194,7 +195,15 @@ fn use_preprocessor() {
 ```
 
 *Jitter Implementation*  
-TODO: this
+Implemented in the lexer using a state machine:
+1. Upon seeing a '#' token, identify the directive as one of:
+```C++
+#define from_token to_tokens
+#include "file_path.jitter"
+```
+2. For `#include`, simply read the specified file (relative path) and tokenize it using a new lexer. Those tokens are then inserted in-place into the original lexer.
+3. For `#define`, lex the `from_token`. If newline is seen next, do not create a `to_tokens`. Otherwise, all following tokens are inserted into `to_tokens`. Once a newline is seen, the tokens are converted into a lexer callback.
+
 
 
 ## 3. Language Plugins
@@ -243,6 +252,15 @@ fn plugin(mut input: AST) -> PluginResult<AST> {
 3. When parsing a Jitter program, the compiler will pass any items marked with `@plugin(plugin_name)` through the corresponding `plugin` function.
 
 This method allows for drag-and-drop language extension. Plugins may be defined in any language capable of generating a compatible dynamic library.
+
+## 4. Total Extension
+### **Extension through a new compiler**
+A compiler can be developed which accepts the target language with various new mechanisms. For example, `Slang` accepts `HLSL` source code and is capable of compiling HLSL directly. However, the compiler adds additional features such as optional syntax changes, generics, and monomorphization -- all features not found in HLSL on its own.
+
+TODO: Finish this section
+
+### **Transpilation**
+TODO: This section
 
 # Uses
 ## 1. Language Language

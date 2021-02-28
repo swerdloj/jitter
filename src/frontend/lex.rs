@@ -383,7 +383,7 @@ impl Lexer {
                                     target_path.push(&string);
                                     
                                     // 1. Read the file to string
-                                    println!("Inserting file: {:?}", target_path);
+                                    // println!("Inserting file: {:?}", target_path);
                                     let target_source = std::fs::read_to_string(target_path);
                                     if target_source.is_err() {
                                         errors.push(format!("Failed to read file: `./{}`", &string));

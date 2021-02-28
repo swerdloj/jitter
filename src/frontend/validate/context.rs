@@ -7,29 +7,29 @@ use super::*;
 
 ///////////////////// Main Validation Functionality /////////////////////
 
-pub struct Context<'input> {
+pub struct Context {
     /// Variable allocation data
-    pub allocations: AllocationTable<'input>,
+    pub allocations: AllocationTable,
     operators: Vec<(Vec<crate::frontend::lex::Token>, String)>,
     /// Function signatures
-    pub functions: FunctionTable<'input>,
+    pub functions: FunctionTable,
     /// Struct signatures
-    structs: HashMap<&'input str, StructDefinition<'input>>,
+    structs: HashMap<String, StructDefinition>,
     /// Type information
-    pub types: TypeTable<'input>,
+    pub types: TypeTable,
     /// Scoped variable information
-    scopes: Scopes<'input>,
+    scopes: Scopes,
 
     /// The validated AST
-    pub ast: ast::AST<'input>,
+    pub ast: ast::AST,
 
     /// Used to validate function bodies using `Statement::Return`s
-    last_return_type: Type<'input>,
+    last_return_type: Type,
     /// Used to simplify table lookups
-    current_function_name: &'input str,
+    current_function_name: String,
 }
 
-impl<'input> Context<'input> {
+impl Context {
     /// Creates an empty validation context
     pub fn new() -> Self {
         Self {
@@ -43,12 +43,12 @@ impl<'input> Context<'input> {
             ast: ast::AST::placeholder(),
 
             last_return_type: Type::Unknown,
-            current_function_name: "",
+            current_function_name: String::new(),
         }
     }
 
     /// Validates and takes ownership of an AST
-    pub fn validate(&mut self, mut ast: ast::AST<'input>) -> Result<(), String> {
+    pub fn validate(&mut self, mut ast: ast::AST) -> Result<(), String> {
         // Registration pass (gathers contextual information)    
         // NOTE: Order matters here
         // for use_ in &ast.uses {
@@ -84,7 +84,7 @@ impl<'input> Context<'input> {
         // }
         
         for function in &mut ast.functions {
-            self.current_function_name = function.prototype.name;
+            self.current_function_name = function.prototype.name.clone();
             self.validate_function_body(function)?;
         }
 
@@ -94,7 +94,7 @@ impl<'input> Context<'input> {
     }
 
     /// Registers and lays out a "repr(C)" struct
-    pub fn register_struct(&mut self, struct_: &ast::Struct<'input>) -> Result<(), String> {
+    pub fn register_struct(&mut self, struct_: &ast::Struct) -> Result<(), String> {
         let needed_padding = |offset: i32, alignment: i32| {
             let misalignment = offset % alignment;
             if misalignment > 0 {
@@ -120,7 +120,7 @@ impl<'input> Context<'input> {
             offset += needed_padding(offset, field_alignment as i32);
             
             // Place field at current offset
-            fields.insert(field.name, StructField {
+            fields.insert(field.name.clone(), StructField {
                 ty: field.ty.clone(),
                 offset,
                 is_public: field.is_public,
@@ -132,7 +132,7 @@ impl<'input> Context<'input> {
         }
         
         self.structs.insert(
-            struct_.name,
+            struct_.name.clone(),
             StructDefinition {
                 fields,
             }
@@ -143,14 +143,14 @@ impl<'input> Context<'input> {
         // Add final padding for the struct's alignment
         // FIXME: Narrowing cast
         let size = offset + needed_padding(offset, alignment as i32);
-        self.types.insert(&Type::User(struct_.name), TypeTableEntry::new(size as usize, alignment))?;
+        self.types.insert(&Type::User(struct_.name.to_owned()), TypeTableEntry::new(size as usize, alignment))?;
 
         Ok(())
     }
 
     /// Returns the type of a field from a struct, enum, or tuple.  
     /// For referenced types, the underlying type will be used.
-    pub fn get_field_type(&self, ty: &Type<'input>, field: &'input str) -> Result<Type<'input>, String> {
+    pub fn get_field_type(&self, ty: &Type, field: &str) -> Result<Type, String> {
         match ty {
             // Peel away the references
             Type::Reference { ty: underlying_type, .. } => {
@@ -179,7 +179,7 @@ impl<'input> Context<'input> {
 
     /// Returns the byte offset of a field for the given type.  
     /// Note that the type **must be the base type**. References return errors.
-    pub fn get_field_offset(&self, ty: &Type<'input>, field: &'input str) -> Result<i32, String> {
+    pub fn get_field_offset(&self, ty: &Type, field: &str) -> Result<i32, String> {
         match ty {
             Type::Reference { .. } => Err(format!("Field offsets cannot be obtained from references")),
 
@@ -187,14 +187,14 @@ impl<'input> Context<'input> {
 
             Type::User(ident) => {
                 // TODO: Errors?
-                Ok(self.structs.get(ident).unwrap().fields.get(field).unwrap().offset)
+                Ok(self.structs.get(ident.as_str()).unwrap().fields.get(field).unwrap().offset)
             }
 
             _ => Err(format!("Tried getting field offset of incompatible type `{}`", ty)),
         }
     }
 
-    pub fn is_field_public(&self, ty: &Type<'input>, field: &'input str) -> Result<bool, String> {        
+    pub fn is_field_public(&self, ty: &Type, field: &str) -> Result<bool, String> {        
         match ty {
             // Recursively strip away type wrappers
             Type::Reference { ty: underlying, .. } => {
@@ -204,7 +204,7 @@ impl<'input> Context<'input> {
             Type::Tuple(types) => todo!(),
             
             Type::User(name) => {
-                let struct_ = self.structs.get(name).ok_or(
+                let struct_ = self.structs.get(name.as_str()).ok_or(
                     format!("No such type: `{}`", name)
                 )?;
 
@@ -232,19 +232,19 @@ impl<'input> Context<'input> {
     // TODO: Handle `self` parameter -- needs context of `impl`
     //       `Self` type must be handled similarly
     // NOTE: The function's parameters are valid at this point
-    pub fn validate_function_body(&mut self, function: &mut ast::Function<'input>) -> Result<(), String> {        
+    pub fn validate_function_body(&mut self, function: &mut ast::Function) -> Result<(), String> {        
         // Create a new scope containing the function's parameters
         self.scopes.push_scope();
         for param in &function.prototype.parameters.item {
             // NOTE: Function parameters are passed in -> no allocation information needed
-            self.scopes.add_var_to_scope(param.name, param.mutable, param.ty.clone(), MemoryUsage::FunctionParam)?;
+            self.scopes.add_var_to_scope(param.name.clone(), param.mutable, param.ty.clone(), MemoryUsage::FunctionParam)?;
         }
         
         // Validate the function body
         let _implicit_return_type = self.validate_block(&mut function.body, true)?;
 
         for (name, data) in self.scopes.pop_scope().variables {
-            self.allocations.insert(self.current_function_name, name, data.memory_usage)?;
+            self.allocations.insert(self.current_function_name.clone(), name, data.memory_usage)?;
         }
 
         if self.last_return_type == function.prototype.return_type {
@@ -252,7 +252,7 @@ impl<'input> Context<'input> {
             self.last_return_type = Type::Unknown;
             
             // The function is confirmed valid at this point
-            self.functions.mark_function_validated(function.prototype.name)?;
+            self.functions.mark_function_validated(function.prototype.name.as_str())?;
 
             Ok(())
         } else {
@@ -262,7 +262,7 @@ impl<'input> Context<'input> {
 
     /// Validates a block expression/function body.  
     /// Returns the block's type.
-    pub fn validate_block(&mut self, block: &mut ast::BlockExpression<'input>, is_function_body: bool) -> Result<Type<'input>, String> {
+    pub fn validate_block(&mut self, block: &mut ast::BlockExpression, is_function_body: bool) -> Result<Type, String> {
         let mut block_type = Type::Unknown;
 
         for statement in &mut block.block.item {
@@ -275,7 +275,7 @@ impl<'input> Context<'input> {
                         *is_function_return = true;
 
                         if let Some(ident) = Self::reduce_expression_to_alias(expression) {
-                            self.scopes.signal_return_variable(ident);
+                            self.scopes.signal_return_variable(ident.to_owned());
                         }
                     }
 
@@ -308,7 +308,7 @@ impl<'input> Context<'input> {
     }
 
     /// Validates a statement & assigns types
-    pub fn validate_statement(&mut self, statement: &mut ast::Statement<'input>) -> Result<(), String> {
+    pub fn validate_statement(&mut self, statement: &mut ast::Statement) -> Result<(), String> {
         match statement {
             // Ensures the variable is not already in scope and has valid types
             ast::Statement::Let { ident, mutable, ty, value } => {
@@ -322,7 +322,7 @@ impl<'input> Context<'input> {
                     // If this assignment simply aliases another variable,
                     // signal that no allocations are needed, as this will use that variable's
                     if let Some(alias) = Self::reduce_expression_to_alias(expr) {
-                        memory_usage = MemoryUsage::Alias(alias);
+                        memory_usage = MemoryUsage::Alias(alias.to_owned());
                     }
 
                     if ty.is_unknown() {
@@ -341,7 +341,7 @@ impl<'input> Context<'input> {
                     }
                 }
 
-                self.scopes.add_var_to_scope(ident, *mutable, ty.clone(), memory_usage)?;
+                self.scopes.add_var_to_scope(ident.clone(), *mutable, ty.clone(), memory_usage)?;
             }
 
             // TODO: aliasing/reducing
@@ -381,7 +381,7 @@ impl<'input> Context<'input> {
                             return Err(format!("Cannot assign to immutable variable `{}`", name));
                         }
                         if let Some(ident) = Self::reduce_expression_to_alias(expression) {
-                            var_data.memory_usage = MemoryUsage::Alias(ident);
+                            var_data.memory_usage = MemoryUsage::Alias(ident.to_owned());
                         }
                     }
 
@@ -409,7 +409,7 @@ impl<'input> Context<'input> {
                 // If a stack-allocated variable is being returned,
                 // signal that the variable must use the struct-return slot
                 if let Some(ident) = Self::reduce_expression_to_alias(expression) {
-                    self.scopes.signal_return_variable(ident);
+                    self.scopes.signal_return_variable(ident.to_owned());
                 }
             }
 
@@ -427,7 +427,7 @@ impl<'input> Context<'input> {
 
     // TODO: Make sure `ty` is assigned wherever needed
     /// Validates an expression, determining its type. Returns the type of the expression.
-    pub fn validate_expression(&mut self, expression: &mut ast::Expression<'input>) -> Result<Type<'input>, String> {
+    pub fn validate_expression(&mut self, expression: &mut ast::Expression) -> Result<Type, String> {
         match expression {
             ast::Expression::BinaryExpression { lhs, op, rhs, ty } => {
                 let l_type = self.validate_expression(lhs)?;
@@ -549,19 +549,19 @@ impl<'input> Context<'input> {
                 
                 // FIXME: A few hacks to avoid immutable + mutable borrow
                 {
-                    let struct_definition = self.structs.get(ty.to_string().as_str())
+                    let struct_definition = self.structs.get(&ty.to_string())
                         .ok_or(format!("No type `{}` compatible with field constructor", ty))?;
 
                     // Note the required fields
                     for field in struct_definition.fields.keys() {
-                        required_fields.insert(*field);
+                        required_fields.insert(field.clone());
                     }
                 }
 
                 // Check each assigned field/value with the expected fields/values
                 for (field_name, expr) in fields {
                     // FIXME: Another (not terrible) hack to satisfy borrows
-                    let field_type = self.structs.get(ty.to_string().as_str()).unwrap().fields.get(field_name.as_str())
+                    let field_type = self.structs.get(&ty.to_string()).unwrap().fields.get(field_name.as_str())
                         .ok_or(format!("Type `{}` has no field `{}`", ty, field_name))?
                         .ty.clone();
                     
@@ -637,7 +637,7 @@ impl<'input> Context<'input> {
                 let expr_type = self.validate_block(block, false)?;
                 
                 for (name, data) in self.scopes.pop_scope().variables {
-                    self.allocations.insert(self.current_function_name, name, data.memory_usage)?;
+                    self.allocations.insert(self.current_function_name.clone(), name, data.memory_usage)?;
                 }
 
 
@@ -663,7 +663,7 @@ impl<'input> Context<'input> {
     /// If an expression reduces to an alias, return the alias.  
     /// Returns `None` if the expression does not alias any variables.
     // TODO: Re-enable this once used
-    fn reduce_expression_to_alias(validated_expression: &ast::Expression<'input>) -> Option<&'static str> {
+    fn reduce_expression_to_alias(validated_expression: &ast::Expression) -> Option<&'static str> {
         // if let ast::Expression::Ident { name, .. } = validated_expression {
         //     return Some(name);
         // }

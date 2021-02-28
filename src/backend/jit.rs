@@ -78,7 +78,7 @@ impl<'a> JitterContextBuilder<'a> {
             let tokens = lexer.lex();
             // Parse
             let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
-            let ast = parser.parse_ast("");
+            let ast = parser.parse_ast(String::from(""));
             // println!("AST: {:#?}", ast);
 
             // Analyze
@@ -208,7 +208,7 @@ impl JitterContext {
 
     // TODO: Consider moving this into codegen.rs to put all codegen in one place
     fn generate_function(&mut self, function: &ast::Function, validation_context: &ValidationContext) -> Result<(), String> {
-        let func_id = self.functions.get(function.prototype.name)
+        let func_id = self.functions.get(&function.prototype.name)
             .ok_or(format!("Attempted to translate an unregistered function: {}", function.prototype.name))?;
 
         // Define the function parameters (passed in by stack address)

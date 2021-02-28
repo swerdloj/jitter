@@ -1,6 +1,7 @@
 pub mod frontend;
 pub mod backend;
 pub mod macros;
+pub mod extension;
 
 pub use proc_macros::{link, export};
 
@@ -11,7 +12,6 @@ pub mod prelude {
     pub use crate::frontend::LexerCallback;
     pub use crate::backend::jit::{JitterContextBuilder, JitterContext};
 }
-
 
 /// Wrapper around a stack-allocated Jitter-returned type.
 ///

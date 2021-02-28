@@ -90,7 +90,7 @@ impl<'a> Parser<'a> {
 
     ///////////// Parse Functions /////////////
 
-    pub fn parse_ast(&self, module: &'a str) -> ast::AST {
+    pub fn parse_ast(&self, module: String) -> ast::AST {
         let mut ast = ast::AST::new(module);
 
         while self.is_anything_unparsed() {
@@ -260,7 +260,7 @@ impl<'a> Parser<'a> {
             // `T`
             Token::Ident(ident) => {
                 self.advance();
-                Type::resolve_builtin(ident)
+                Type::resolve_builtin(ident.clone())
             }
 
             // `&T` or `&mut T`
@@ -370,7 +370,7 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 let trait_ = ast::Trait {
-                    name,
+                    name: name.clone(),
                     default_functions,
                     required_functions,
                     is_public,
@@ -435,8 +435,8 @@ impl<'a> Parser<'a> {
 
                                 let impl_ = ast::Impl {
                                     // No name implies base impl
-                                    trait_name: name1,
-                                    target_name,
+                                    trait_name: name1.clone(),
+                                    target_name: target_name.clone(),
                                     functions,
                                 };
 
@@ -464,8 +464,8 @@ impl<'a> Parser<'a> {
 
                         let impl_ = ast::Impl {
                             // No name implies base impl
-                            trait_name: "",
-                            target_name: name1,
+                            trait_name: String::new(),
+                            target_name: name1.clone(),
                             functions,
                         };
 
@@ -496,7 +496,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let fields = self.parse_struct_fields();
                 let item = ast::Struct {
-                    name,
+                    name: name.clone(),
                     fields,
                     is_public,
                 };
@@ -534,7 +534,7 @@ impl<'a> Parser<'a> {
                     self.advance();
 
                     let field = ast::StructField {
-                        name,
+                        name: name.clone(),
                         ty: self.parse_type(),
                         is_public,
                     };
@@ -616,7 +616,7 @@ impl<'a> Parser<'a> {
             };
 
             let prototype = ast::FunctionPrototype {
-                name,
+                name: name.to_owned(),
                 parameters,
                 return_type,
             };
@@ -654,7 +654,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let param = ast::FunctionParameter {
                     mutable,
-                    name: "self",
+                    name: "self".to_owned(),
                     // FIXME: This will later be replaced with the proper `User` variant. 
                     //        Is there a better approach?
                     ty: Type::Unknown,
@@ -668,7 +668,7 @@ impl<'a> Parser<'a> {
 
                     let param = ast::FunctionParameter {
                         mutable,
-                        name: field_name,
+                        name: field_name.to_owned(),
                         ty: self.parse_type(),
                     };
 
@@ -794,7 +794,7 @@ impl<'a> Parser<'a> {
                 }
                 
                 statement = ast::Statement::Let {
-                    ident,
+                    ident: ident.to_owned(),
                     mutable,
                     ty,
                     value: expression,
@@ -1128,7 +1128,7 @@ impl<'a> Parser<'a> {
 
                     let access = ast::Expression::FieldAccess {
                         base_expr: Box::new(base),
-                        field: ident,
+                        field: ident.to_owned(),
                         ty: Type::Unknown,
                     };
                     base = Node::new(access, start.extend(*self.current_span()));
@@ -1281,7 +1281,7 @@ impl<'a> Parser<'a> {
             // `#.#type`
             let ty = if let Token::Ident(type_specifier) = self.current_token() {
                 self.advance();
-                let float_type = Type::resolve_builtin(type_specifier);
+                let float_type = Type::resolve_builtin(type_specifier.clone());
                 if !float_type.is_float() {
                     parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid floating-point type specifier", type_specifier);
                 }
@@ -1300,7 +1300,7 @@ impl<'a> Parser<'a> {
         else {
             let ty = if let Token::Ident(type_specifier) = self.current_token() {
                 self.advance();
-                let specified = Type::resolve_builtin(type_specifier);
+                let specified = Type::resolve_builtin(type_specifier.clone());
                 if !specified.is_numeric() {
                     parser_error!(self.file_path, self.previous_span(), "`{}` is not a valid type specifier", type_specifier);
                 }
@@ -1387,7 +1387,7 @@ impl<'a> Parser<'a> {
         }
 
         ast::Expression::FieldConstructor {
-            ty: Type::User(ident),
+            ty: Type::User(ident.to_owned()),
             fields,
         }
     }
