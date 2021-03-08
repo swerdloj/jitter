@@ -19,6 +19,7 @@ use std::collections::HashMap;
 pub struct JitterContextBuilder<'a> {
     simple_jit_builder: SimpleJITBuilder,
     source_path: &'a str,
+    extension_path: &'a str,
 
     lexer_callbacks: Vec<LexerCallback<'a>>,
 }
@@ -39,6 +40,7 @@ impl<'a> JitterContextBuilder<'a> {
         Self {
             simple_jit_builder,
             source_path: "",
+            extension_path: ".",
             lexer_callbacks: Vec::new(),
         }
     }
@@ -48,6 +50,11 @@ impl<'a> JitterContextBuilder<'a> {
     /// `context.with_function("function_name", function_name as _)`
     pub fn with_function(mut self, alias: &str, pointer: *const u8) -> Self {
         self.simple_jit_builder.symbol(alias, pointer);
+        self
+    }
+
+    pub fn with_extension_path(mut self, path: &'a str) -> Self {
+        self.extension_path = path;
         self
     }
 
@@ -77,7 +84,8 @@ impl<'a> JitterContextBuilder<'a> {
 
             let tokens = lexer.lex();
             // Parse
-            let parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
+            let mut parser = crate::frontend::parse::Parser::new(self.source_path, tokens);
+            parser.set_extension_path(self.extension_path.to_string());
             let ast = parser.parse_ast(String::from(""));
             // println!("AST: {:#?}", ast);
 

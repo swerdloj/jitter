@@ -6,6 +6,8 @@ use ast::{Literal, Node};
 use super::lex::{self, Token, SpannedToken, Keyword};
 use crate::frontend::validate::types::Type;
 
+use std::collections::HashMap;
+
 // TODO: Return Results from everything.
 // TODO: Handle errors by simply return the expected node, but poisoned.
 //       Then, print all errors before exiting.
@@ -28,11 +30,21 @@ macro_rules! parser_error {
     };
 }
 
+/// Represents an `@directive(inputs, ..)`
+// NOTE: This is not used by the AST. Rather, this is used to generate AST nodes.
+#[derive(Debug)]
+pub struct MetaTag<'a> {
+    directive: &'a str,
+    inputs: Vec<&'a str>,
+}
+
 pub struct Parser<'a> {
     file_path: &'a str,
     tokens: Vec<SpannedToken>,
     // Interior mutability allows nesting method calls without worrying about `self` usage
     position: std::cell::RefCell<usize>,
+    extension_path: String,
+    extensions: std::cell::RefCell<HashMap<String, super::super::extension::Extension>>,
 }
 
 // NOTE: Some functions expect to parse only the desired token.
@@ -53,7 +65,13 @@ impl<'a> Parser<'a> {
             file_path,
             tokens,
             position: std::cell::RefCell::new(0),
+            extension_path: String::from("."),
+            extensions: std::cell::RefCell::new(HashMap::new()),
         }
+    }
+
+    pub fn set_extension_path(&mut self, path: String) {
+        self.extension_path = path;
     }
 
     // NOTE: This is used to determine certain item spans *after* parsing,
@@ -94,14 +112,47 @@ impl<'a> Parser<'a> {
         let mut ast = ast::AST::new(module);
 
         while self.is_anything_unparsed() {
-            ast.insert_top_level(self.parse_top_level());
+            let (item, meta) = self.parse_top_level();
+
+            if let Some(meta_usage) = meta {
+                // println!("Meta: {:?}\non: {:?}", meta_usage, item);
+                
+                if !self.extensions.borrow_mut().contains_key(meta_usage.directive) {
+                    // TODO: Apple dylib
+                    let file_type = if cfg!(windows) {
+                        "dll"
+                    } else {
+                        "so"
+                    };
+                    
+                    let extension = unsafe {
+                        super::super::extension::Extension::new(
+                            &format!("{}/{}.{}", self.extension_path, meta_usage.directive, file_type)
+                        )
+                    };
+                    
+                    self.extensions.borrow_mut().insert(meta_usage.directive.to_string(), extension);
+                }
+                
+                let extensions = self.extensions.borrow();
+                let extension = extensions.get(meta_usage.directive).unwrap();
+                
+                let transformed = extension.transform_top_level(item, meta_usage.inputs);
+
+                // TODO: Insert results into AST
+                for item in transformed.unwrap() {
+                    ast.insert_top_level(item.into());
+                }
+            } else {
+                ast.insert_top_level(item);
+            }
         }
 
         ast
     }
 
     // TopLevel items are all nodes by themselves
-    pub fn parse_top_level(&self) -> ast::TopLevel {
+    pub fn parse_top_level(&self) -> (ast::TopLevel, Option<MetaTag>) {
         let fail_if_public = |public: bool| {
             if public {parser_error!(self.file_path, self.current_span(), "Unexpected `pub` keyword");}
         };
@@ -110,7 +161,13 @@ impl<'a> Parser<'a> {
             true    
         } else {false};
 
-        match self.current_token() {
+        let meta = if let Token::At = self.current_token() {
+            Some(self.parse_meta_tag())
+        } else {
+            None
+        };
+
+        let item = match self.current_token() {
             Token::Keyword(keyword) => {
                 match keyword {
                     Keyword::Extern => {
@@ -178,6 +235,50 @@ impl<'a> Parser<'a> {
             _ => {
                 parser_error!(self.file_path, self.current_span(), "Expected a TODO:. Found unexpected token `{}`", self.current_token());
             }
+        };
+
+        (item, meta)
+    }
+
+    // `@directive(inputs, ..)`
+    pub fn parse_meta_tag(&self) -> MetaTag {
+        let start = self.current_span();
+        self.advance(); // pass the `@`
+
+        if let Token::Ident(directive) = self.current_token() {
+            self.advance();
+            if let Token::OpenParen = self.current_token() {
+                self.advance();
+                let mut inputs = Vec::new();
+                loop {
+                    if let Token::Ident(input) = self.current_token() {
+                        inputs.push(input.as_str());
+                        self.advance();
+
+                        // Allow one trailing comma
+                        if let Token::Comma = self.current_token() {
+                            self.advance();
+                            continue;
+                        }
+                    }
+
+                    if let Token::CloseParen = self.current_token() {
+                        self.advance();
+                        break;
+                    } else {
+                        parser_error!(self.file_path, self.current_span(), "Expected `)`. Found `{}`", self.current_token());
+                    }
+                }
+
+                MetaTag {
+                    directive,
+                    inputs,
+                }
+            } else {
+                parser_error!(self.file_path, self.current_span(), "Expected `(`. Found `{}`", self.current_token());
+            }
+        } else {
+            parser_error!(self.file_path, self.current_span(), "Expected identifier to create meta tag. Found `{}`", self.current_token());
         }
     }
 

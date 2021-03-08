@@ -39,6 +39,7 @@ struct JitterStruct {
 fn main() {
     let jitter = Jitter! {
         ["./tests/rewrite_test.jitter"] <- [print_i32, print_u32, hello_from_rust]
+        extensions <- ["./examples"]
         where 
         [
             // Informs the lexer to replace left side with right side
@@ -57,26 +58,8 @@ fn main() {
     //     replacement: "hello_from_rust(123_u32);",
     // });
 
-    let ffi = GetFunction! {
-        jitter::FFI as fn(u32)
-    };
 
-    let test = GetFunction! {
-        jitter::test as fn() -> i32
-    };
-
-    let params = GetFunction! {
-        jitter::params as fn(u32, u32) -> u32
-    };
-
-    let structs = GetFunction! {
-        jitter::structs as fn(u32, i32) -> i32
-    };
-
-    let struct_return = GetFunction! {
-        jitter::struct_return as fn(u32, i32) -> JitterStruct
-    };
-
+    // Can get single function
     let function_call1 = GetFunction! {
         jitter::function_call1 as fn() -> i32
     };
@@ -85,17 +68,19 @@ fn main() {
         jitter::function_call2 as fn() -> JitterStruct
     };
 
-    let callback = GetFunction! {
-        jitter::custom_lex_callback as fn()
-    };
 
-    let ops = GetFunction! {
-        jitter::custom_operators as fn()
-    };
-
-    let preprocessing = GetFunction! {
-        jitter::preprocessing as fn()
-    };
+    // Sets the identifier to `GetFunction!(rhs)` 
+    GetFunctions! {
+        struct_return = jitter::struct_return       as fn(u32, i32) -> JitterStruct,
+        structs       = jitter::structs             as fn(u32, i32) -> i32,
+        params        = jitter::params              as fn(u32, u32) -> u32,
+        test          = jitter::test                as fn() -> i32,
+        ffi           = jitter::FFI                 as fn(u32),
+        callback      = jitter::custom_lex_callback as fn(),
+        ops           = jitter::custom_operators    as fn(),
+        preprocessing = jitter::preprocessing       as fn(),
+        meta          = jitter::meta_usage          as fn(),
+    }
 
     // ffi(&9);
     // println!("test() = {}", test().into());
@@ -104,11 +89,13 @@ fn main() {
     // println!("struct_return(90, -1) = {:?}", struct_return(&90, &-1).into());
     // println!("function_call1() = {}", function_call1().into());
     // println!("function_call2() = {:?}", function_call2().into());
-    callback();
-    println!("--preprocessing()--");
-    preprocessing();
-    println!("--operators()--");
-    ops();
+    // callback();
+    // println!("--preprocessing()--");
+    // preprocessing();
+    // println!("--operators()--");
+    // ops();
+
+    meta();
 }
 
 

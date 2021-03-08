@@ -7,7 +7,7 @@
 /// If no lexer replacements are needed, omit the `where [...]` section.
 ///
 /// Usage:
-/// ```Rust
+/// ```
 /// fn some_function(...) {...}
 ///
 /// let jitter_context = Jitter! {
@@ -33,6 +33,10 @@ macro_rules! Jitter {
         $(  // Function group body (with optional trailing comma)
             <- [ $($func:ident),+    $(,)? ]
         )?
+        // Optional extension path
+        $(
+            extensions <- [$extension_path:expr]
+        )?
         // Optional lexer callbacks
         $(
             where [ $($input:expr => $output:expr),+    $(,)? ]
@@ -50,6 +54,10 @@ macro_rules! Jitter {
             $(
                 .with_function(stringify!($func), $func as *const u8)
             )+
+        )?
+        // Extension group
+        $(
+            .with_extension_path($extension_path)
         )?
         // Lexer group
         $(
@@ -69,7 +77,7 @@ macro_rules! Jitter {
 /// Get a function pointer from a Jitter context without worrying about FFI details.
 /// 
 /// Usage:
-/// ```Rust
+/// ```
 /// let jitter: JitterContext = ...;
 ///
 /// let jitter_fn = GetFunction! {
@@ -77,7 +85,7 @@ macro_rules! Jitter {
 /// };
 /// ```  
 /// The macro will expand to the following code:
-/// ```Rust
+/// ```
 /// let jitter_fn: fn(&param, &types) -> Return<return_type> = unsafe {
 ///     std::mem::transmute(jitter.get_fn("function"))
 /// };
@@ -107,6 +115,34 @@ macro_rules! GetFunction {
         // |$(p1: $param,)*| $(-> $ret)? {
         //     func(&p1, ...).into()
         // }
+    };
+}
+
+/// Get multiple function pointers from a Jitter context without worrying about FFI details.
+/// 
+/// Usage:
+/// ```
+/// let jitter: JitterContext = ...;
+///
+/// GetFunctions! {
+///     jitter_fn1 = jitter::function1 as fn(param, types) -> return_type,
+///     jitter_fn2 = jitter::function2 as fn(param, types) -> return_type,
+///     ..
+/// }
+/// ```  
+/// The macro will call `GetFunction!` for each item, assigning it to the desired varaible.
+#[macro_export]
+macro_rules! GetFunctions {
+    (
+        $(
+            $name:ident = 
+                $context:ident :: $function:ident as fn($($param:ty),*) $(-> $ret:ty)?
+        ),+ $(,)?
+    ) => {
+        $(
+            let $name = 
+                GetFunction!($context :: $function as fn($($param),*) $(-> $ret)?);
+        )+
     };
 }
 

@@ -644,7 +644,7 @@ impl Context {
                 Ok(expr_type)
             }
 
-            ast::Expression::Literal { value, ty } => {
+            ast::Expression::Literal { value: _, ty } => {
                 // TODO: Is this correct? 
                 //       What about when the type isn't known?
                 Ok(ty.clone())
