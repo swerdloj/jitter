@@ -14,7 +14,6 @@ crate-type = ["dylib"]
 benchmark = []
 
 [dependencies]
-proc-macros = { path = "proc-macros" }
 # TODO: Enable this through a feature
 libloading = "0.7.0"
 

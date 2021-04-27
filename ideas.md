@@ -232,7 +232,7 @@ Control of the Jitter program would be given to the framework host, and so long 
 This approach lends itself particularly well to Jitter's overarching goals. `@persistent` is especially useful here.
 
 ---
-**Potential Paper**
+**Potential Papers**
 - 1 - Libraries as Languages
   - Explore the idea of replacing the typical use case of a library with that of a language (DSL)
 - 2 - Syntax as Functions

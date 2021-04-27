@@ -3,9 +3,6 @@ pub mod backend;
 pub mod macros;
 pub mod extension;
 
-pub use proc_macros::{link, export};
-
-
 /// Includes essential types and convenience macros
 pub mod prelude {
     pub use crate::{Return, Jitter, GetFunction, GetFunctions};

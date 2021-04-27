@@ -17,7 +17,7 @@ fn transform_top_level(mut item: Item, inputs: Vec<&str>) -> ExtensionResult {
             }
         }
 
-        _ => {}
+        _ => return Err("Not a struct".into())
     }
 
     Ok(vec![item])
